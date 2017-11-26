@@ -54,8 +54,14 @@ float wp1 [] = {4.0, 0.0, 0.0};
 float wp2 [] = {8.0, -4.0, 3.14};
 float wp3 [] = {8.0, 0.0, -1.57};
 
+// Path planning represented as list of waypoints (x,y,theta)
+vector<float> x_wp_list, y_wp_list, theta_wp_list;
+
 // Robot Position
 double X, Y, Yaw;
+
+// Velocity control variable
+geometry_msgs::Twist vel;
 // ------------------------------------------------------------------
 
 //Callback function for the Position topic (LIVE)
@@ -179,7 +185,7 @@ void visualize_milestones()
     }
 }
 
-//Callback function for the map
+// Callback function for the map
 void map_callback(const nav_msgs::OccupancyGrid& msg) {
     // Copy msg map data into grid map data
 	copy(msg.data.data(), msg.data.data() + map_size, grid_map.data());
@@ -189,6 +195,8 @@ void map_callback(const nav_msgs::OccupancyGrid& msg) {
         visualize_milestones();
     }
 }
+
+// Generate commands based on
 
 
 int main(int argc, char **argv) {
@@ -206,9 +214,6 @@ int main(int argc, char **argv) {
     //Setup topics to Publish from this node
     ros::Publisher velocity_publisher = n.advertise<geometry_msgs::Twist>("/cmd_vel_mux/input/navi", 1);
     marker_pub = n.advertise<visualization_msgs::Marker>("visualization_marker", 1, true);
-
-    //Velocity control variable
-    geometry_msgs::Twist vel;
 
     //Set the loop rate
     ros::Rate loop_rate(20);    //20Hz update rate
