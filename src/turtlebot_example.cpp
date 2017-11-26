@@ -3,10 +3,11 @@
 // turtlebot_example.cpp
 // This file contains example code for use with ME 597 lab 3
 //
-// Author: James Servos 
+// Author: James Servos
 //
 // //////////////////////////////////////////////////////////
 
+// Initial Libraries
 #include <ros/ros.h>
 #include <geometry_msgs/PoseStamped.h>
 #include <geometry_msgs/Twist.h>
@@ -16,25 +17,49 @@
 #include <nav_msgs/OccupancyGrid.h>
 #include <geometry_msgs/PoseWithCovarianceStamped.h>
 
+// Additional Libraries
+#include <Eigen/Dense>
+#include <iostream>
+#include <vector>
+#include <algorithm>
+
+// Namespace
+using namespace std;
+using namespace Eigen;
+
 ros::Publisher marker_pub;
 
 #define TAGID 0
 
+// Configurations
+#define map_height 100
+#define map_width 100
+#define map_size 10000
+
+// ------------------------------------------------------------------
+// Global Variables
+
+// Map declaration
+// Map is stored as RowMajor array
+Matrix<int,Dynamic,Dynamic,RowMajor> grid_map;
+
+// Robot Position
+double X, Y, Yaw;
+// ------------------------------------------------------------------
+
 //Callback function for the Position topic (LIVE)
 
-void pose_callback(const geometry_msgs::PoseWithCovarianceStamped & msg)
-{
+void pose_callback(const geometry_msgs::PoseWithCovarianceStamped & msg) {
 	//This function is called when a new position message is received
-	double X = msg.pose.pose.position.x; // Robot X psotition
-	double Y = msg.pose.pose.position.y; // Robot Y psotition
- 	double Yaw = tf::getYaw(msg.pose.pose.orientation); // Robot Yaw
+	X = msg.pose.pose.position.x; // Robot X psotition
+	Y = msg.pose.pose.position.y; // Robot Y psotition
+ 	Yaw = tf::getYaw(msg.pose.pose.orientation); // Robot Yaw
 
-	std::cout << "X: " << X << ", Y: " << Y << ", Yaw: " << Yaw << std::endl ;
+	// std::cout << "X: " << X << ", Y: " << Y << ", Yaw: " << Yaw << std::endl ;
 }
 
 //Example of drawing a curve
-void drawCurve(int k) 
-{
+void drawCurve(int k) {
    // Curves are drawn as a series of stright lines
    // Simply sample your curves into a series of points
 
@@ -59,11 +84,11 @@ void drawCurve(int k)
        p.x = x;
        p.y = y;
        p.z = 0; //not used
-       lines.points.push_back(p); 
+       lines.points.push_back(p);
 
        //curve model
        x = x+0.1;
-       y = sin(0.1*i*k);   
+       y = sin(0.1*i*k);
    }
 
    //publish new curve
@@ -72,16 +97,16 @@ void drawCurve(int k)
 }
 
 //Callback function for the map
-void map_callback(const nav_msgs::OccupancyGrid& msg)
-{
-    //This function is called when a new map is received
-    
-    //you probably want to save the map into a form which is easy to work with
+void map_callback(const nav_msgs::OccupancyGrid& msg) {
+    // Copy msg map data into grid map data
+	copy(msg.data.data(), msg.data.data() + map_size, grid_map.data());
 }
 
 
-int main(int argc, char **argv)
-{
+int main(int argc, char **argv) {
+	//Initialize map
+	grid_map = 50*MatrixXi::Ones(map_height, map_width);
+
 	//Initialize the ROS framework
     ros::init(argc,argv,"main_control");
     ros::NodeHandle n;
@@ -93,25 +118,25 @@ int main(int argc, char **argv)
     //Setup topics to Publish from this node
     ros::Publisher velocity_publisher = n.advertise<geometry_msgs::Twist>("/cmd_vel_mux/input/navi", 1);
     marker_pub = n.advertise<visualization_msgs::Marker>("visualization_marker", 1, true);
-    
+
     //Velocity control variable
     geometry_msgs::Twist vel;
 
     //Set the loop rate
     ros::Rate loop_rate(20);    //20Hz update rate
-	
+
 
     while (ros::ok())
     {
-    	loop_rate.sleep(); //Maintain the loop rate
-    	ros::spinOnce();   //Check for new messages
+    	loop_rate.sleep(); // Maintain the loop rate
+    	ros::spinOnce();   // Check for new messages
 
-	 //Draw Curves
+	 	// Draw Curves
          drawCurve(1);
          drawCurve(2);
          drawCurve(4);
-    
-    	//Main loop code goes here:
+
+    	// Main loop code goes here:
     	vel.linear.x = 0.1; // set linear speed
     	vel.angular.z = 0.3; // set angular speed
 
