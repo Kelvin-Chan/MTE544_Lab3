@@ -35,6 +35,9 @@ ros::Publisher marker_pub;
 #define map_height 100
 #define map_width 100
 #define map_size 10000
+#define num_milestones 200
+
+#define DEBUG_MODE 1
 
 // ------------------------------------------------------------------
 // Global Variables
@@ -42,6 +45,9 @@ ros::Publisher marker_pub;
 // Map declaration
 // Map is stored as RowMajor array
 Matrix<int,Dynamic,Dynamic,RowMajor> grid_map;
+
+// Milestone (Col0: X, Col1: Y)
+MatrixXd Milestones = MatrixXd::Zero(num_milestones, 2);
 
 // Robot Position
 double X, Y, Yaw;
@@ -96,10 +102,46 @@ void drawCurve(int k) {
 
 }
 
+// generate milestone points and remove point on obstacles
+void generate_milestones()
+{
+    // generate NUM_MILESTONES and only store them if they
+    // do not coincide with an objects, otherwise retry
+
+    int current_x;
+    int current_y;
+
+    for (int i = 0; i < num_milestones; i++)
+    {
+        while (true) {
+            current_x = rand() % map_width;
+            current_y = rand() % map_height;
+            if (grid_map(current_x, current_y) == 0) {
+                break;
+            }
+        }
+        Milestones(i, 0) = current_x;
+        Milestones(i, 1) = current_y;
+    }
+}
+
+void visualize_milestones()
+{
+    for (int i = 0; i < num_milestones; i++)
+    {
+        std::cout << "Milestone X: " << Milestones(i, 0) << ",  Y: " << Milestones(i, 1) << std::endl;
+    }
+}
+
 //Callback function for the map
 void map_callback(const nav_msgs::OccupancyGrid& msg) {
     // Copy msg map data into grid map data
 	copy(msg.data.data(), msg.data.data() + map_size, grid_map.data());
+	generate_milestones();
+    if (DEBUG_MODE)
+    {
+        visualize_milestones();
+    }
 }
 
 
