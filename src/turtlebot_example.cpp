@@ -49,6 +49,11 @@ Matrix<int,Dynamic,Dynamic,RowMajor> grid_map;
 // Milestone (Col0: X, Col1: Y)
 MatrixXd Milestones = MatrixXd::Zero(num_milestones, 2);
 
+// Waypoints [x[m], y[m], θ[rad]]
+float wp1 [] = {4.0, 0.0, 0.0};
+float wp2 [] = {8.0, -4.0, 3.14};
+float wp3 [] = {8.0, 0.0, -1.57};
+
 // Robot Position
 double X, Y, Yaw;
 // ------------------------------------------------------------------
@@ -100,6 +105,47 @@ void drawCurve(int k) {
    //publish new curve
    marker_pub.publish(lines);
 
+}
+
+//Bresenham line algorithm (pass empty vectors)
+// Usage: (x0, y0) is the first point and (x1, y1) is the second point. The calculated
+//        points (x, y) are stored in the x and y vector. x and y should be empty
+//	  vectors of integers and shold be defined where this function is called from.
+void bresenham(int x0, int y0, int x1, int y1, std::vector<int>& x, std::vector<int>& y) {
+    // cout << "Called bresenham" << endl;
+
+    int dx = abs(x1 - x0);
+    int dy = abs(y1 - y0);
+    int dx2 = x1 - x0;
+    int dy2 = y1 - y0;
+
+    const bool s = abs(dy) > abs(dx);
+
+    if (s) {
+        int dx2 = dx;
+        dx = dy;
+        dy = dx2;
+    }
+
+    int inc1 = 2 * dy;
+    int d = inc1 - dx;
+    int inc2 = d - dx;
+
+    x.push_back(x0);
+    y.push_back(y0);
+
+    while (x0 != x1 || y0 != y1) {
+        if (s) y0+=sgn(dy2); else x0+=sgn(dx2);
+        if (d < 0) d += inc1;
+        else {
+            d += inc2;
+            if (s) x0+=sgn(dx2); else y0+=sgn(dy2);
+        }
+
+        //Add point to vector
+        x.push_back(x0);
+        y.push_back(y0);
+    }
 }
 
 // generate milestone points and remove point on obstacles
