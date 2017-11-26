@@ -15,10 +15,20 @@
 #include <visualization_msgs/Marker.h>
 #include <nav_msgs/OccupancyGrid.h>
 #include <geometry_msgs/PoseWithCovarianceStamped.h>
+#include <Eigen/Dense>
+
+using namespace Eigen;
 
 ros::Publisher marker_pub;
 
 #define TAGID 0
+
+// GLOBALS for milestone generation
+#define NUM_MILESTONES 200
+#define MAP_X_RANGE 100
+#define MAP_Y_RANGE 100
+MatrixXd Milestones = MatrixXd::Zero(NUM_MILESTONES, 2);
+MatrixXd OccupancyMap = MatrixXd::Zero(MAP_X_RANGE, MAP_Y_RANGE);
 
 //Callback function for the Position topic (LIVE)
 
@@ -80,6 +90,46 @@ void map_callback(const nav_msgs::OccupancyGrid& msg)
 }
 
 
+// XXX: DUMMY CODE
+void generate_occupancy_grid() {
+    for (int i = 0; i < 100; i++) {
+        for (int j = 0; j< 50; j++) {
+            OccupancyMap(i, j) = 100;
+        }
+    }
+}
+
+// generate milestone points and remove point on obstacles
+void generate_milestones()
+{
+    // generate NUM_MILESTONES and only store them if they
+    // do not coincide with an objects, otherwise retry
+
+    int current_x;
+    int current_y;
+
+    for (int i = 0; i < NUM_MILESTONES; i++)
+    {
+        while (true) {
+            current_x = rand() % MAP_X_RANGE;
+            current_y = rand() % MAP_Y_RANGE;
+            if (OccupancyMap(current_x, current_y) == 0) {
+                break;
+            }
+        }
+        Milestones(i, 0) = current_x;
+        Milestones(i, 1) = current_y;
+    }
+}
+
+void visualize_milestones()
+{
+    for (int i = 0; i < NUM_MILESTONES; i++)
+    {
+        std::cout << "Milestone X: " << Milestones(i, 0) << ",  Y: " << Milestones(i, 1) << std::endl;
+    }
+}
+
 int main(int argc, char **argv)
 {
 	//Initialize the ROS framework
@@ -100,6 +150,10 @@ int main(int argc, char **argv)
     //Set the loop rate
     ros::Rate loop_rate(20);    //20Hz update rate
 	
+    //XXX: DUMMY CODE
+    generate_occupancy_grid();
+    generate_milestones();
+    visualize_milestones();
 
     while (ros::ok())
     {
