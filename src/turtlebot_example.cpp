@@ -21,7 +21,10 @@
 #include <Eigen/Dense>
 #include <iostream>
 #include <vector>
+#include <queue>
 #include <algorithm>
+#include <cmath>
+#include <stdint.h>
 
 // Namespace
 using namespace std;
@@ -36,6 +39,7 @@ ros::Publisher marker_pub;
 #define map_width 100
 #define map_size 10000
 #define num_milestones 200
+#define wp_radius_tol 0.25	// 0.25 m radius tolerance for waypoints
 
 #define DEBUG_MODE 1
 
@@ -55,10 +59,14 @@ float wp2 [] = {8.0, -4.0, 3.14};
 float wp3 [] = {8.0, 0.0, -1.57};
 
 // Path planning represented as list of waypoints (x,y,theta)
-vector<float> x_wp_list, y_wp_list, theta_wp_list;
+queue<float> x_wp_list, y_wp_list, theta_wp_list;
 
 // Robot Position
 double X, Y, Yaw;
+
+// Past and current target waypoint
+float x_old, y_old, theta_old;
+float x_target, y_target, theta_target;
 
 // Velocity control variable
 geometry_msgs::Twist vel;
@@ -67,7 +75,7 @@ geometry_msgs::Twist vel;
 //Callback function for the Position topic (LIVE)
 
 void pose_callback(const geometry_msgs::PoseWithCovarianceStamped & msg) {
-	//This function is called when a new position message is received
+	// This function is called when a new position message is received
 	X = msg.pose.pose.position.x; // Robot X psotition
 	Y = msg.pose.pose.position.y; // Robot Y psotition
  	Yaw = tf::getYaw(msg.pose.pose.orientation); // Robot Yaw
@@ -111,6 +119,11 @@ void drawCurve(int k) {
    //publish new curve
    marker_pub.publish(lines);
 
+}
+
+short sgn(int x) {
+    // cout << "Called sgn" << endl;
+    return x >= 0 ? 1 : -1;
 }
 
 //Bresenham line algorithm (pass empty vectors)
@@ -196,8 +209,36 @@ void map_callback(const nav_msgs::OccupancyGrid& msg) {
     }
 }
 
-// Generate commands based on
+// Generate velocity commands based on planned waypoints, current robot pose
+ void velocity_control_update() {
+	 // Distance between robot position and target waypoint
+	 float dist = sqrt(pow((x_target - X), 2) + pow((y_target - Y), 2));
 
+	 // If robot position is within waypoint radius tolerance, pop for next
+	 if (dist < wp_radius_tol) {
+		 // Store previous waypoint
+		 x_old = x_target;
+		 y_old = y_target;
+		 theta_old = theta_target;
+
+		 // Get new waypoint
+		 x_target = x_wp_list.front();
+		 y_target = y_wp_list.front();
+		 theta_target = theta_wp_list.front();
+
+		 // Pop element from queue
+		 x_wp_list.pop();
+		 y_wp_list.pop();
+		 theta_wp_list.pop();
+	 }
+
+	 // Use closed-loop controller to correct robot path between two waypoints
+
+
+	 // Can only command turtlebot for linear x & angular z
+	 vel.linear.x = 0;
+	 vel.angular.z = 0;
+ }
 
 int main(int argc, char **argv) {
 	//Initialize map
@@ -230,8 +271,7 @@ int main(int argc, char **argv) {
          drawCurve(4);
 
     	// Main loop code goes here:
-    	vel.linear.x = 0.1; // set linear speed
-    	vel.angular.z = 0.3; // set angular speed
+    	velocity_control_update();
 
     	velocity_publisher.publish(vel); // Publish the command velocity
     }
