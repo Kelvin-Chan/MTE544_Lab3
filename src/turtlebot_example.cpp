@@ -38,10 +38,11 @@ ros::Publisher marker_pub;
 #define map_height 100
 #define map_width 100
 #define map_size 10000
-#define num_milestones 10
+#define num_milestones 200
 #define wp_radius_tol 0.25	// 0.25 m radius tolerance for waypoints
 
 #define DEBUG_MODE 1
+static const int wp_sequence[] = {1,3,1,2};
 
 // ------------------------------------------------------------------
 // Global Variables
@@ -52,7 +53,7 @@ Matrix<int,Dynamic,Dynamic,RowMajor> grid_map;
 
 // Milestones (Col0: X, Col1: Y)
 MatrixXd Milestones = MatrixXd::Zero(num_milestones, 2);
-Matrix<int, num_milestones, num_milestones> MilestoneEdges;
+Matrix<bool, num_milestones, num_milestones ,RowMajor> MilestoneEdges;
 
 
 // Waypoints [x[m], y[m], θ[rad]]
@@ -203,6 +204,16 @@ void visualize_milestones()
     std::cout << "];" << std::endl;
 }
 
+
+// return euclidean distance between two milestones of indices i and j
+double edge_length(int i, int j)
+{
+    return sqrt(double(
+        pow((Milestones(i,0) - Milestones(j,0)), 2) +
+        pow((Milestones(i,1) - Milestones(j,1)), 2)
+    ));
+}
+
 void generate_edges()
 {
     // MilestoneEdges
@@ -213,10 +224,15 @@ void generate_edges()
     {
         for (j = 0; j < num_milestones; j++)
         {
-            MilestoneEdges(i,j) = false;
+            MilestoneEdges(i,j) = true;
         }
     }
 
+    // for comparing again occupancy grid_map
+    int temp_x;
+    int temp_y;
+
+    // avoiding duplication of work
     for (i = 0; i < num_milestones; i++)
     {
         for (j = 0; j < i; j++)
@@ -226,6 +242,33 @@ void generate_edges()
             {
                 MilestoneEdges(i,j) = false;
                 MilestoneEdges(j,i) = false;
+                continue;
+            }
+
+            std::vector<int> bres_x_coords;
+            std::vector<int> bres_y_coords;
+            bresenham(
+                Milestones(i, 0),
+                Milestones(i, 1),
+                Milestones(j, 0),
+                Milestones(j, 1),
+                bres_x_coords,
+                bres_y_coords
+            );
+
+            while (!bres_x_coords.empty())
+            {
+                temp_x = bres_x_coords.back();
+                temp_y = bres_y_coords.back();
+                bres_x_coords.pop_back();
+                bres_y_coords.pop_back();
+
+                if (grid_map(temp_x, temp_y) != 0)
+                {
+                    MilestoneEdges(i,j) = false;
+                    MilestoneEdges(j,i) = false;
+                    break;
+                }
             }
         }
     }
@@ -246,19 +289,41 @@ void visualize_edges()
     std::cout << "];" << std::endl;
 }
 
+void generate_path()
+{
+    int num_wp = sizeof(wp_sequence)/sizeof(wp_sequence[0]);
+    for (int i = 0; i < (num_wp - 1); i++)
+    {
+        std::cout << "\% Generating Path " << i << " For: "<< wp_sequence[i] << " - " << wp_sequence[(i+1)] << std::endl;
+    }
+}
+
+void visualize_path()
+{
+}
+
+
 // Callback function for the map
 void map_callback(const nav_msgs::OccupancyGrid& msg) {
     // Copy msg map data into grid map data
 	copy(msg.data.data(), msg.data.data() + map_size, grid_map.data());
+
 	generate_milestones();
     if (DEBUG_MODE)
     {
         visualize_milestones();
     }
+
     generate_edges();
     if (DEBUG_MODE)
     {
         visualize_edges();
+    }
+
+    generate_path();
+    if (DEBUG_MODE)
+    {
+        visualize_path();
     }
 }
 
