@@ -38,7 +38,7 @@ ros::Publisher marker_pub;
 #define map_height 100
 #define map_width 100
 #define map_size 10000
-#define num_milestones 200
+#define num_milestones 10
 #define wp_radius_tol 0.25	// 0.25 m radius tolerance for waypoints
 
 #define DEBUG_MODE 1
@@ -50,8 +50,10 @@ ros::Publisher marker_pub;
 // Map is stored as RowMajor array
 Matrix<int,Dynamic,Dynamic,RowMajor> grid_map;
 
-// Milestone (Col0: X, Col1: Y)
+// Milestones (Col0: X, Col1: Y)
 MatrixXd Milestones = MatrixXd::Zero(num_milestones, 2);
+Matrix<int, num_milestones, num_milestones> MilestoneEdges;
+
 
 // Waypoints [x[m], y[m], θ[rad]]
 float wp1 [] = {4.0, 0.0, 0.0};
@@ -192,10 +194,56 @@ void generate_milestones()
 
 void visualize_milestones()
 {
+    std::cout << "milestones = [";
     for (int i = 0; i < num_milestones; i++)
     {
-        std::cout << "Milestone X: " << Milestones(i, 0) << ",  Y: " << Milestones(i, 1) << std::endl;
+        // std::cout << "Milestone X: " << Milestones(i, 0) << ",  Y: " << Milestones(i, 1) << std::endl;
+        std::cout << Milestones(i, 0) << " " << Milestones(i, 1) << "; ";
     }
+    std::cout << "];" << std::endl;
+}
+
+void generate_edges()
+{
+    // MilestoneEdges
+    int i, j;
+
+    // initialization
+    for (i = 0; i < num_milestones; i++)
+    {
+        for (j = 0; j < num_milestones; j++)
+        {
+            MilestoneEdges(i,j) = false;
+        }
+    }
+
+    for (i = 0; i < num_milestones; i++)
+    {
+        for (j = 0; j < i; j++)
+        {
+            // if milestones overlap ignore edge
+            if ((Milestones(i, 0) == Milestones(j, 0)) and (Milestones(i, 1) == Milestones(j, 1)))
+            {
+                MilestoneEdges(i,j) = false;
+                MilestoneEdges(j,i) = false;
+            }
+        }
+    }
+}
+
+void visualize_edges()
+{
+    int i, j;
+    std::cout << "edges = [";
+    for (i = 0; i < num_milestones; i++)
+    {
+        for (j = 0; j < num_milestones; j++)
+        {
+            std::cout << int(MilestoneEdges(i,j)) << " ";
+        }
+        std::cout << "; ";
+    }
+    std::cout << "];" << std::endl;
 }
 
 // Callback function for the map
@@ -206,6 +254,11 @@ void map_callback(const nav_msgs::OccupancyGrid& msg) {
     if (DEBUG_MODE)
     {
         visualize_milestones();
+    }
+    generate_edges();
+    if (DEBUG_MODE)
+    {
+        visualize_edges();
     }
 }
 
