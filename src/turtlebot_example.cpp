@@ -21,7 +21,7 @@
 #include <Eigen/Dense>
 #include <iostream>
 #include <vector>
-#include <queue>
+#include <deque>
 #include <algorithm>
 #include <cmath>
 #include <stdint.h>
@@ -34,12 +34,21 @@ ros::Publisher marker_pub;
 
 #define TAGID 0
 
-// Configurations
+// ------------------------------------------------------------------
+// Map Configurations
 #define map_height 100
 #define map_width 100
 #define map_size 10000
+
+// Waypoint Configurations
 #define num_milestones 200
 #define wp_radius_tol 0.25	// 0.25 m radius tolerance for waypoints
+
+// Controller Configurations
+#define K_P 1		// Proportional gain
+#define K_I 1		// Integral gain
+#define K_D 1		// Derivative gain
+#define T 0.05	// Discrete Time period
 
 #define DEBUG_MODE 1
 
@@ -59,21 +68,28 @@ float wp2 [] = {8.0, -4.0, 3.14};
 float wp3 [] = {8.0, 0.0, -1.57};
 
 // Path planning represented as list of waypoints (x,y,theta)
-queue<float> x_wp_list, y_wp_list, theta_wp_list;
+deque<float> x_wp_list, y_wp_list, theta_wp_list;
 
 // Robot Position
 double X, Y, Yaw;
 
 // Past and current target waypoint
-float x_old, y_old, theta_old;
+float x_prev, y_prev, theta_prev;
 float x_target, y_target, theta_target;
+
+// Controls Variables deque
+// The most recent variables are in the first index
+deque<float> r, e, u, y;
 
 // Velocity control variable
 geometry_msgs::Twist vel;
+
+// Flags
+int endReached = 0;
+
 // ------------------------------------------------------------------
 
 //Callback function for the Position topic (LIVE)
-
 void pose_callback(const geometry_msgs::PoseWithCovarianceStamped & msg) {
 	// This function is called when a new position message is received
 	X = msg.pose.pose.position.x; // Robot X psotition
@@ -168,8 +184,7 @@ void bresenham(int x0, int y0, int x1, int y1, std::vector<int>& x, std::vector<
 }
 
 // generate milestone points and remove point on obstacles
-void generate_milestones()
-{
+void generate_milestones() {
     // generate NUM_MILESTONES and only store them if they
     // do not coincide with an objects, otherwise retry
 
@@ -190,8 +205,7 @@ void generate_milestones()
     }
 }
 
-void visualize_milestones()
-{
+void visualize_milestones() {
     for (int i = 0; i < num_milestones; i++)
     {
         std::cout << "Milestone X: " << Milestones(i, 0) << ",  Y: " << Milestones(i, 1) << std::endl;
@@ -211,38 +225,90 @@ void map_callback(const nav_msgs::OccupancyGrid& msg) {
 
 // Generate velocity commands based on planned waypoints, current robot pose
  void velocity_control_update() {
-	 // Distance between robot position and target waypoint
-	 float dist = sqrt(pow((x_target - X), 2) + pow((y_target - Y), 2));
-
-	 // If robot position is within waypoint radius tolerance, pop for next
-	 if (dist < wp_radius_tol) {
-		 // Store previous waypoint
-		 x_old = x_target;
-		 y_old = y_target;
-		 theta_old = theta_target;
-
-		 // Get new waypoint
-		 x_target = x_wp_list.front();
-		 y_target = y_wp_list.front();
-		 theta_target = theta_wp_list.front();
-
-		 // Pop element from queue
-		 x_wp_list.pop();
-		 y_wp_list.pop();
-		 theta_wp_list.pop();
+	 // Return if completed
+	 if (endReached) {
+		 return;
 	 }
 
-	 // Use closed-loop controller to correct robot path between two waypoints
+	 // Distance between robot position and target waypoint
+	 float robot_dist = sqrt(pow((x_target - X), 2) + pow((y_target - Y), 2));
 
+	 // If robot position is within waypoint radius tolerance
+	 // Pop deque for next waypoint
+	 if (robot_dist < wp_radius_tol) {
+		 // Store previous waypoint
+		 x_prev = x_target;
+		 y_prev = y_target;
+		 theta_prev = theta_target;
+
+		 // Grab new waypoints if they exist
+		 if (x_wp_list.size() + y_wp_list.size() + theta_wp_list.size() > 0) {
+			 x_target = x_wp_list[0];
+			 y_target = y_wp_list[0];
+			 theta_target = theta_wp_list[0];
+
+			 // Pop element from queue
+			 x_wp_list.pop_front();
+			 y_wp_list.pop_front();
+			 theta_wp_list.pop_front();
+		 } else {
+			 // End reached, stop robot and exit function
+			 vel.linear.x = 0;
+			 vel.angular.z = 0;
+			 endReached = 1;
+			 return;
+		 }
+	 }
+
+	 // -------------------------------------------------------------------------
+	 // HEADING CONTROLLER
+	 // Path heading is the reference that the robot heading is trying to track
+	 // Using error between robot heading and path heading to control yaw
+	 // Using discretized PID control
+	 // -------------------------------------------------------------------------
+	 // Use closed-loop controller to correct robot path between two waypoints
+	 // Distance between previous & target waypoints [rad]
+	 float path_dist = sqrt(pow((x_target - x_prev), 2)
+	 										+ pow((y_target - y_prev), 2));
+
+	 // Heading between previous & target waypoints [rad]
+	 float path_heading = atan2((y_target - y_prev),(x_target - x_prev));
+
+	 // Heading between robot position & target waypoint [rad]
+	 float robot_heading = atan2((y_target - Y),(x_target - X));
+
+	 // Update r, y, e; keeping constant history size
+	 r.push_front(path_heading);
+	 r.pop_back();
+
+	 y.push_front(robot_heading)
+	 y.pop_back();
+
+	 e.push_front(r[0] - y[0]);
+	 e.pop_back();
+
+	 // Update u with difference equation in terms of K_
+	 u.push_front(0 /*Insert difference equation here*/);
+	 u.pop_back();
 
 	 // Can only command turtlebot for linear x & angular z
-	 vel.linear.x = 0;
-	 vel.angular.z = 0;
+	 // Constant linear velocity
+	 vel.linear.x = 0.1;
+	 vel.angular.z = u[0];
+	  // -------------------------------------------------------------------------
  }
 
 int main(int argc, char **argv) {
-	//Initialize map
+	// Initialize map
 	grid_map = 50*MatrixXi::Ones(map_height, map_width);
+
+	// Initialize control variables
+	for (int a = 0; a < 3; a++) {
+		r.push_back(0);
+		e.push_back(0);
+		u.push_back(0);
+		y.push_back(0);
+	}
 
 	//Initialize the ROS framework
     ros::init(argc,argv,"main_control");
