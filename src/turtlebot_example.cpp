@@ -43,7 +43,7 @@ ros::Publisher marker_pub;
 #define wp_radius_tol 0.25	// 0.25 m radius tolerance for waypoints
 
 #define DEBUG_MODE 1
-static const int wp_sequence[] = {1,3,1,2};
+static const int wp_sequence[] = {1,3,1,2,3};
 
 // ------------------------------------------------------------------
 // Global Variables
@@ -60,13 +60,15 @@ SparseMatrix<double> EdgeDistances(num_milestones, num_milestones);
 
 
 // Waypoints [x[m], y[m], θ[rad]]
-float wp1 [] = {4.0, 0.0, 0.0};
-float wp2 [] = {8.0, -4.0, 3.14};
-float wp3 [] = {8.0, 0.0, -1.57};
+float wp1 [] = {-4.0, -4.0, 0.0};
+float wp2 [] = {-4.0, 1.0, 3.14};
+float wp3 [] = {-2.0, 1.0, -1.57};
 float *wp_list[] = {wp1, wp2, wp3};
 
 // Path planning represented as list of waypoints (x,y,theta)
 queue<float> x_wp_list, y_wp_list, theta_wp_list;
+deque<int> x_d_wp_list, y_d_wp_list;
+
 
 // Robot Position
 double X, Y, Yaw;
@@ -223,7 +225,6 @@ void visualize_milestones()
     std::cout << "milestones = [";
     for (int i = 0; i < num_milestones; i++)
     {
-        // std::cout << "Milestone X: " << Milestones(i, 0) << ",  Y: " << Milestones(i, 1) << std::endl;
         std::cout << Milestones(i, 0) << " " << Milestones(i, 1) << "; ";
     }
     std::cout << "];" << std::endl;
@@ -331,7 +332,7 @@ int find_vec_min(std::vector<double> &vec)
     {
         if (vec[i] < min_val)
         {
-            min_ind = 0;
+            min_ind = i;
             min_val = vec[i];
         }
     }
@@ -385,7 +386,6 @@ void a_star_algorithm(int start, int finish)
     // Main Algorithm
     while(!done)
     {
-        cout << open_node.size() << " - " << closed_node.size() << endl;
         if (open_node.empty())
         {
             // XXX
@@ -451,45 +451,52 @@ void a_star_algorithm(int start, int finish)
     }
 
     // Backtrack and find final path
+    int current_milestone_close_node_ind;
+    int prev;
     int current_milestone = finish;
-    while (current_milestone != start)
-    {
-    }
-    int current_milestone_close_node_ind = find_vec_ind(closed_node, finish);
-    int prev =
 
+    while (current_milestone != -1)
+    {
+        current_milestone_close_node_ind = find_vec_ind(closed_node, current_milestone);
+        prev = closed_backtrack[current_milestone_close_node_ind];
+
+        x_d_wp_list.push_front(Milestones(current_milestone, 0));
+        y_d_wp_list.push_front(Milestones(current_milestone, 1));
+
+        current_milestone = prev;
+    }
 }
 
-// void generate_path_partial(float X0, float Y0, float X1, float Y1)
-// {
-//     std::cout << "\% Routing (" << X0 << "," << Y0 << ") - (" << X1 << "," << Y1 << ")" << std::endl;
-//     int x0 = C2D_DISTANCE(X0);
-//     int y0 = C2D_DISTANCE(Y0);
-//     int x1 = C2D_DISTANCE(X1);
-//     int y1 = C2D_DISTANCE(Y1);
-// 
-// }
 
 void generate_path()
 {
-    std::cout << "\% Generating Path " << 0 << " For: IPS - " << wp_sequence[0] << std::endl;
-
     int num_wp = sizeof(wp_sequence)/sizeof(wp_sequence[0]);
-    for (int i = 0; i < (num_wp - 1); i++)
+    for (int i = (num_wp - 2); i >= 0; i--)
     {
         std::cout << "\% Generating Path " << (i+1) << " For: "<< wp_sequence[i] << " - " << wp_sequence[(i+1)] << std::endl;
         a_star_algorithm(wp_sequence[i], wp_sequence[(i+1)]);
-        // generate_path_partial(
-        //     wp_list[(wp_sequence[i]-1)][0],
-        //     wp_list[(wp_sequence[i]-1)][1],
-        //     wp_list[(wp_sequence[i+1]-1)][0],
-        //     wp_list[(wp_sequence[i+1]-1)][1]
-        // );
     }
+
+    std::cout << "\% Generating Path " << 0 << " For: IPS - " << wp_sequence[0] << std::endl;
+    a_star_algorithm(0, wp_sequence[0]);
+
 }
 
 void visualize_path()
 {
+    std::cout << "path = [";
+    for (int i = 0; i < x_d_wp_list.size(); i++)
+    {
+        std::cout << x_d_wp_list[i] << " " << y_d_wp_list[i] << "; ";
+    }
+    std::cout << "];" << std::endl;
+
+    std::cout << "waypoints = [";
+    for (int i = 0; i < 3; i++)
+    {
+        std::cout << Milestones(i+1, 0) << " " << Milestones(i+1, 1) << "; ";
+    }
+    std::cout << "];" << std::endl;
 }
 
 
