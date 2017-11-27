@@ -60,6 +60,7 @@ Matrix<bool, num_milestones, num_milestones ,RowMajor> MilestoneEdges;
 float wp1 [] = {4.0, 0.0, 0.0};
 float wp2 [] = {8.0, -4.0, 3.14};
 float wp3 [] = {8.0, 0.0, -1.57};
+float *wp_list[] = {wp1, wp2, wp3};
 
 // Path planning represented as list of waypoints (x,y,theta)
 queue<float> x_wp_list, y_wp_list, theta_wp_list;
@@ -73,6 +74,13 @@ float x_target, y_target, theta_target;
 
 // Velocity control variable
 geometry_msgs::Twist vel;
+// ------------------------------------------------------------------
+
+
+// ------------------------------------------------------------------
+// Macros
+#define D2C_DISTANCE(x) double(x*25.0/100.0 - (25.0/2.0))
+#define C2D_DISTANCE(x) int((x + (25.0/2.0)) * 100.0/25.0)
 // ------------------------------------------------------------------
 
 //Callback function for the Position topic (LIVE)
@@ -289,12 +297,29 @@ void visualize_edges()
     std::cout << "];" << std::endl;
 }
 
+
+void generate_path_partial(float X0, float Y0, float X1, float Y1)
+{
+    std::cout << "\% Routing (" << X0 << "," << Y0 << ") - (" << X1 << "," << Y1 << ")" << std::endl;
+    int x0 = C2D_DISTANCE(X0);
+    int y0 = C2D_DISTANCE(Y0);
+    int x1 = C2D_DISTANCE(X1);
+    int y1 = C2D_DISTANCE(Y1);
+
+}
+
 void generate_path()
 {
     int num_wp = sizeof(wp_sequence)/sizeof(wp_sequence[0]);
     for (int i = 0; i < (num_wp - 1); i++)
     {
         std::cout << "\% Generating Path " << i << " For: "<< wp_sequence[i] << " - " << wp_sequence[(i+1)] << std::endl;
+        generate_path_partial(
+            wp_list[(wp_sequence[i]-1)][0],
+            wp_list[(wp_sequence[i]-1)][1],
+            wp_list[(wp_sequence[i+1]-1)][0],
+            wp_list[(wp_sequence[i+1]-1)][1]
+        );
     }
 }
 
