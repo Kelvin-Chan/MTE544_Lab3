@@ -532,11 +532,30 @@ void generate_path()
     {
         std::cout << "\% Generating Path " << (i+1) << " For: "<< wp_sequence[i] << " - " << wp_sequence[(i+1)] << std::endl;
         a_star_algorithm(wp_sequence[i], wp_sequence[(i+1)]);
+        theta_wp_list.push_front(wp_list[wp_sequence[(i+1)]-1][2]);
+
+        // pad list with -1.0 s
+        while (x_d_wp_list.size() > theta_wp_list.size())
+        {
+            theta_wp_list.push_front(-1.0);
+        }
     }
+
 
     std::cout << "\% Generating Path " << 0 << " For: IPS - " << wp_sequence[0] << std::endl;
     a_star_algorithm(0, wp_sequence[0]);
 
+    // pad list with -1.0 s
+    while (x_d_wp_list.size() > theta_wp_list.size())
+    {
+        theta_wp_list.push_front(-1.0);
+    }
+
+    for (int i = 0; i < x_d_wp_list.size(); i++)
+    {
+        x_wp_list.push_back(D2C_DISTANCE_X(x_d_wp_list[i],y_d_wp_list[i]));
+        y_wp_list.push_back(D2C_DISTANCE_Y(x_d_wp_list[i],y_d_wp_list[i]));
+    }
 }
 
 void visualize_path()
@@ -554,6 +573,12 @@ void visualize_path()
         std::cout << Milestones(i+1, 0) << " " << Milestones(i+1, 1) << "; ";
     }
     std::cout << "];" << std::endl;
+
+    // for (int i = 0; i < x_wp_list.size(); i++)
+    // {
+    //     std::cout << x_wp_list[i] << " " << y_wp_list[i] << " " << theta_wp_list[i] << endl;
+    // }
+
 }
 
 
