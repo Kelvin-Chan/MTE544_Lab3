@@ -18,6 +18,7 @@
 
 // Additional Libraries
 #include <Eigen/Dense>
+#include <Eigen/Sparse>
 #include <iostream>
 #include <vector>
 #include <deque>
@@ -38,7 +39,7 @@ using namespace Eigen;
 #define map_size 10000
 
 // Waypoint Configurations
-#define num_milestones 200
+#define num_milestones 300
 #define wp_radius_tol 0.25	// 0.25 m radius tolerance for waypoints
 
 // Controller Configurations
@@ -48,6 +49,8 @@ float K_D = 1;		// Derivative gain
 float period = 0.05;		// Discrete Time period
 
 #define DEBUG_MODE 1
+#define SIMULATION 1
+static const int wp_sequence[] = {1,3,1,2,3};
 
 // ------------------------------------------------------------------
 // Global Variables
@@ -61,16 +64,28 @@ visualization_msgs::Marker waypoints;
 // Map is stored as RowMajor array
 Matrix<int,Dynamic,Dynamic,RowMajor> grid_map;
 
-// Milestone (Col0: X, Col1: Y)
-MatrixXd Milestones = MatrixXd::Zero(num_milestones, 2);
+// Milestones (Col0: X, Col1: Y)
+Matrix<int, num_milestones, 2, RowMajor> Milestones;
+Matrix<bool, num_milestones, num_milestones, RowMajor> MilestoneEdges;
+// Matrix<double, num_milestones, num_milestones, RowMajor> EdgeDistances;
+SparseMatrix<double> EdgeDistances(num_milestones, num_milestones);
+
 
 // Waypoints [x[m], y[m], θ[rad]]
+#ifdef SIMULATION
+float wp1 [] = {3.5, 0.0, 0.0};
+float wp2 [] = {7.5, 0.0, 3.14};
+float wp3 [] = {7.5, -3.5, -1.57};
+#else
 float wp1 [] = {4.0, 0.0, 0.0};
 float wp2 [] = {8.0, -4.0, 3.14};
 float wp3 [] = {8.0, 0.0, -1.57};
+#endif
+float *wp_list[] = {wp1, wp2, wp3};
 
 // Path planning represented as list of waypoints (x,y,theta)
 deque<float> x_wp_list, y_wp_list, theta_wp_list;
+deque<int> x_d_wp_list, y_d_wp_list;
 
 // Current Robot Position
 // This should be augmented by localization for increased performance
@@ -93,7 +108,28 @@ geometry_msgs::Twist vel;
 // Flags
 int endReached = 0;
 
+bool initial_pose_received = false;
+bool initial_map_received = false;
+double initial_x;
+double initial_y;
 // ------------------------------------------------------------------
+
+
+// ------------------------------------------------------------------
+// Macros
+#ifdef SIMULATION
+#define C2D_DISTANCE_X(x, y) int((y + 5.0) * 100.0/10.0)
+#define C2D_DISTANCE_Y(x, y) int((x + 1.0) * 100.0/10.0)
+#define D2C_DISTANCE_X(x, y) double((y*10.0/100.0) - 1.0)
+#define D2C_DISTANCE_Y(x, y) double((x*10.0/100.0) - 5.0)
+#else
+#define C2D_DISTANCE_X(x, y) 0 //int(x * 100.0/10.0)
+#define C2D_DISTANCE_Y(x, y) 0 //int(y * 100.0/10.0)
+#define D2C_DISTANCE_X(x, y) 0 //double(x * 10.0/100.0)
+#define D2C_DISTANCE_Y(x, y) 0 //double(y * 10.0/100.0)
+#endif
+// ------------------------------------------------------------------
+void perform_prm(); // prototype
 
 // ------------------------------------------------------------------
 // Functions
@@ -105,6 +141,18 @@ void pose_callback(const geometry_msgs::PoseWithCovarianceStamped & msg) {
 	X = msg.pose.pose.position.x; // Robot X psotition
 	Y = msg.pose.pose.position.y; // Robot Y psotition
  	Yaw = tf::getYaw(msg.pose.pose.orientation); // Robot Yaw
+
+    if (!initial_pose_received)
+    {
+        initial_pose_received = true;
+        initial_x = X;
+        initial_y = Y;
+
+        if (initial_map_received)
+        {
+            perform_prm();
+        }
+    }
 
 	// std::cout << "X: " << X << ", Y: " << Y << ", Yaw: " << Yaw << std::endl ;
 }
@@ -201,7 +249,10 @@ void generate_milestones() {
     int current_x;
     int current_y;
 
-    for (int i = 0; i < num_milestones; i++) {
+    std::cout << "\% Generating Milestones"<< std::endl;
+
+    for (int i = 0; i < num_milestones; i++)
+    {
         while (true) {
             current_x = rand() % map_width;
             current_y = rand() % map_height;
@@ -212,21 +263,329 @@ void generate_milestones() {
         Milestones(i, 0) = current_x;
         Milestones(i, 1) = current_y;
     }
+
+    // overwrite first four positions with initial IPS and 3 Waypoints
+    // XXX: Placeholder for IPS x,y
+    for (int i = 1; i < 4; i++)
+    {
+        Milestones(i, 0) = C2D_DISTANCE_X(wp_list[i-1][0], wp_list[i-1][1]);
+        Milestones(i, 1) = C2D_DISTANCE_Y(wp_list[i-1][0], wp_list[i-1][1]);
+    }
+
+    Milestones(0, 0) = C2D_DISTANCE_X(initial_x, initial_y);
+    Milestones(0, 1) = C2D_DISTANCE_Y(initial_x, initial_y);
+
 }
 
-void visualize_milestones() {
-    for (int i = 0; i < num_milestones; i++) {
-        std::cout << "Milestone X: " << Milestones(i, 0) << ",  Y: " << Milestones(i, 1) << std::endl;
+void visualize_milestones()
+{
+    std::cout << "milestones = [";
+    for (int i = 0; i < num_milestones; i++)
+    {
+        std::cout << Milestones(i, 0) << " " << Milestones(i, 1) << "; ";
+    }
+    std::cout << "];" << std::endl;
+}
+
+
+// return euclidean distance between two milestones of indices i and j
+double edge_length(int i, int j)
+{
+    return sqrt(double(
+        pow((Milestones(i,0) - Milestones(j,0)), 2) +
+        pow((Milestones(i,1) - Milestones(j,1)), 2)
+    ));
+}
+
+void generate_edges()
+{
+    std::cout << "\% Generating Edges"<< std::endl;
+    // MilestoneEdges
+    int i, j;
+
+    // initialization
+    for (i = 0; i < num_milestones; i++)
+    {
+        for (j = 0; j < num_milestones; j++)
+        {
+            MilestoneEdges(i,j) = true;
+        }
+    }
+
+    // for comparing again occupancy grid_map
+    int temp_x;
+    int temp_y;
+
+    // avoiding duplication of work
+    for (i = 0; i < num_milestones; i++)
+    {
+        for (j = 0; j < i; j++)
+        {
+            // if milestones overlap ignore edge
+            if ((Milestones(i, 0) == Milestones(j, 0)) and (Milestones(i, 1) == Milestones(j, 1)))
+            {
+                MilestoneEdges(i,j) = false;
+                MilestoneEdges(j,i) = false;
+                continue;
+            }
+
+            std::vector<int> bres_x_coords;
+            std::vector<int> bres_y_coords;
+            bresenham(
+                Milestones(i, 0),
+                Milestones(i, 1),
+                Milestones(j, 0),
+                Milestones(j, 1),
+                bres_x_coords,
+                bres_y_coords
+            );
+
+            while (!bres_x_coords.empty())
+            {
+                temp_x = bres_x_coords.back();
+                temp_y = bres_y_coords.back();
+                bres_x_coords.pop_back();
+                bres_y_coords.pop_back();
+
+                if (grid_map(temp_x, temp_y) != 0)
+                {
+                    MilestoneEdges(i,j) = false;
+                    MilestoneEdges(j,i) = false;
+                    break;
+                }
+            }
+
+            if (MilestoneEdges(i,j))
+            {
+                EdgeDistances.insert(i,j) = edge_length(i,j);
+                EdgeDistances.insert(j,i) = EdgeDistances.coeff(i,j);
+            }
+        }
     }
 }
+
+void visualize_edges()
+{
+    int i, j;
+    std::cout << "edges = [";
+    for (i = 0; i < num_milestones; i++)
+    {
+        for (j = 0; j < num_milestones; j++)
+        {
+            std::cout << int(MilestoneEdges(i,j)) << " ";
+        }
+        std::cout << "; ";
+    }
+    std::cout << "];" << std::endl;
+}
+
+
+// returns index of smallest double in vec
+int find_vec_min(std::vector<double> &vec)
+{
+    int min_ind = 0;
+    double min_val = vec[0];
+    for (int i = 1; i < vec.size(); i++)
+    {
+        if (vec[i] < min_val)
+        {
+            min_ind = i;
+            min_val = vec[i];
+        }
+    }
+    return min_ind;
+}
+
+// look for val in vec and return its index
+int find_vec_ind(std::vector<int> &vec, int val)
+{
+    for (int i = 0; i < vec.size(); i++)
+    {
+        if (vec[i] == val)
+        {
+            return i;
+        }
+    }
+    return -1;
+}
+
+
+// Implementation of A* algorithm
+// start - index of start milestone
+// finish - index of finish milestone
+void a_star_algorithm(int start, int finish)
+{
+    bool done = false;
+    double dmax = edge_length(start, finish);// EdgeDistances(start,finish)
+
+    std::vector<int>    open_node;
+    std::vector<int>    open_backtrack;
+    std::vector<double> open_lower_cost;
+    std::vector<double> open_current_cost;
+
+    std::vector<int>    closed_node;
+    std::vector<int>    closed_backtrack;
+    std::vector<double> closed_lower_cost;
+    std::vector<double> closed_current_cost;
+
+    open_node.push_back(start);
+    open_backtrack.push_back(-1);
+    open_lower_cost.push_back(dmax);
+    open_current_cost.push_back(0.0);
+
+    int best;
+    int best_milestone;
+    int i;
+    double dtogo;
+    double dcurr;
+    int temp_open_node_index;
+
+    // Main Algorithm
+    while(!done)
+    {
+        if (open_node.empty())
+        {
+            // XXX
+            return;
+        }
+
+        // find node with lowest cost node
+        best = find_vec_min(open_lower_cost);
+
+        // move node to close set
+        closed_node.push_back(open_node[best]);
+        closed_backtrack.push_back(open_backtrack[best]);
+        closed_lower_cost.push_back(open_lower_cost[best]);
+        closed_current_cost.push_back(open_current_cost[best]);
+
+        open_node.erase(open_node.begin() + best);
+        open_backtrack.erase(open_backtrack.begin() + best);
+        open_lower_cost.erase(open_lower_cost.begin() + best);
+        open_current_cost.erase(open_current_cost.begin() + best);
+
+        best_milestone = closed_node.back();
+        // Check for end condition
+        if (best_milestone == finish)
+        {
+            done = 1;
+            continue;
+        }
+
+        // interate over connected milestones
+        for (i = 0; i < num_milestones; i++)
+        {
+            // check for edge
+            if (MilestoneEdges(best_milestone, i))
+            {
+                // if milestone in closed set, continue
+                if (find_vec_ind(closed_node, i) != -1)
+                {
+                    continue;
+                }
+                dtogo = edge_length(i, finish);
+                dcurr = closed_current_cost.back() + EdgeDistances.coeff(best_milestone, i);
+
+                // if connect milestone in open set, update distance
+                // otherwise append it to open set
+                temp_open_node_index = find_vec_ind(open_node, i);
+                if (temp_open_node_index == -1)
+                {
+                    open_node.push_back(i);
+                    open_backtrack.push_back(best_milestone);
+                    open_lower_cost.push_back(dtogo+dcurr);
+                    open_current_cost.push_back(dcurr);
+                }
+                else
+                {
+                    open_backtrack[temp_open_node_index] = best_milestone;
+                    open_lower_cost[temp_open_node_index] = dtogo+dcurr;
+                    open_current_cost[temp_open_node_index] = dcurr;
+                }
+
+            }
+        }
+
+    }
+
+    // Backtrack and find final path
+    int current_milestone_close_node_ind;
+    int prev;
+    int current_milestone = finish;
+
+    while (current_milestone != -1)
+    {
+        current_milestone_close_node_ind = find_vec_ind(closed_node, current_milestone);
+        prev = closed_backtrack[current_milestone_close_node_ind];
+
+        x_d_wp_list.push_front(Milestones(current_milestone, 0));
+        y_d_wp_list.push_front(Milestones(current_milestone, 1));
+
+        current_milestone = prev;
+    }
+}
+
+
+void generate_path()
+{
+    int num_wp = sizeof(wp_sequence)/sizeof(wp_sequence[0]);
+    for (int i = (num_wp - 2); i >= 0; i--)
+    {
+        std::cout << "\% Generating Path " << (i+1) << " For: "<< wp_sequence[i] << " - " << wp_sequence[(i+1)] << std::endl;
+        a_star_algorithm(wp_sequence[i], wp_sequence[(i+1)]);
+    }
+
+    std::cout << "\% Generating Path " << 0 << " For: IPS - " << wp_sequence[0] << std::endl;
+    a_star_algorithm(0, wp_sequence[0]);
+
+}
+
+void visualize_path()
+{
+    std::cout << "path = [";
+    for (int i = 0; i < x_d_wp_list.size(); i++)
+    {
+        std::cout << x_d_wp_list[i] << " " << y_d_wp_list[i] << "; ";
+    }
+    std::cout << "];" << std::endl;
+
+    std::cout << "waypoints = [";
+    for (int i = 0; i < 3; i++)
+    {
+        std::cout << Milestones(i+1, 0) << " " << Milestones(i+1, 1) << "; ";
+    }
+    std::cout << "];" << std::endl;
+}
+
 
 // Callback function for the map
 void map_callback(const nav_msgs::OccupancyGrid& msg) {
     // Copy msg map data into grid map data
 	copy(msg.data.data(), msg.data.data() + map_size, grid_map.data());
+    initial_map_received = true;
+
+    if (initial_pose_received)
+    {
+        perform_prm();
+    }
+}
+
+void perform_prm()
+{
 	generate_milestones();
     if (DEBUG_MODE) {
         visualize_milestones();
+    }
+
+    generate_edges();
+    if (DEBUG_MODE)
+    {
+        visualize_edges();
+    }
+
+    generate_path();
+    if (DEBUG_MODE)
+    {
+        visualize_path();
     }
 }
 
