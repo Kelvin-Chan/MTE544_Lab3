@@ -1,9 +1,8 @@
 //  ///////////////////////////////////////////////////////////
 //
-// turtlebot_example.cpp
-// This file contains example code for use with ME 597 lab 3
+//	MTE 544 lab 3
 //
-// Author: James Servos
+//	Author: Kelvin Chan, Tommy Jung, Nicholas Manna, Lutfia Kathrada
 //
 // //////////////////////////////////////////////////////////
 
@@ -30,8 +29,6 @@
 using namespace std;
 using namespace Eigen;
 
-ros::Publisher marker_pub;
-
 #define TAGID 0
 
 // ------------------------------------------------------------------
@@ -54,6 +51,11 @@ float period = 0.05;		// Discrete Time period
 
 // ------------------------------------------------------------------
 // Global Variables
+// ------------------------------------------------------------------
+
+// ROS Publisher and Messages
+ros::Publisher velocity_publisher, marker_pub;
+visualization_msgs::Marker waypoints;
 
 // Map declaration
 // Map is stored as RowMajor array
@@ -74,6 +76,9 @@ deque<float> x_wp_list, y_wp_list, theta_wp_list;
 // This should be augmented by localization for increased performance
 double X, Y, Yaw;
 
+// Localized Robot Position
+double X_l, Y_l, Yaw_l;
+
 // Past and current target waypoint
 float x_prev, y_prev, theta_prev;
 float x_target, y_target, theta_target;
@@ -88,6 +93,10 @@ geometry_msgs::Twist vel;
 // Flags
 int endReached = 0;
 
+// ------------------------------------------------------------------
+
+// ------------------------------------------------------------------
+// Functions
 // ------------------------------------------------------------------
 
 //Callback function for the Position topic (LIVE)
@@ -192,8 +201,7 @@ void generate_milestones() {
     int current_x;
     int current_y;
 
-    for (int i = 0; i < num_milestones; i++)
-    {
+    for (int i = 0; i < num_milestones; i++) {
         while (true) {
             current_x = rand() % map_width;
             current_y = rand() % map_height;
@@ -207,8 +215,7 @@ void generate_milestones() {
 }
 
 void visualize_milestones() {
-    for (int i = 0; i < num_milestones; i++)
-    {
+    for (int i = 0; i < num_milestones; i++) {
         std::cout << "Milestone X: " << Milestones(i, 0) << ",  Y: " << Milestones(i, 1) << std::endl;
     }
 }
@@ -218,14 +225,20 @@ void map_callback(const nav_msgs::OccupancyGrid& msg) {
     // Copy msg map data into grid map data
 	copy(msg.data.data(), msg.data.data() + map_size, grid_map.data());
 	generate_milestones();
-    if (DEBUG_MODE)
-    {
+    if (DEBUG_MODE) {
         visualize_milestones();
     }
 }
 
+// Callback function for the localization
+void localization_callback(const geometry_msgs::PoseStamped& msg) {
+	X_l = msg.pose.position.x;
+	Y_l = msg.pose.position.y;
+	Yaw_l = tf::getYaw(msg.pose.orientation);
+}
+
 // Generate velocity commands based on planned waypoints, current robot pose
- void velocity_control_update() {
+void velocity_control_update() {
 	 // Return if completed
 	 if (endReached) {
 		 return;
@@ -300,22 +313,33 @@ void map_callback(const nav_msgs::OccupancyGrid& msg) {
 	  // -------------------------------------------------------------------------
  }
 
-// Setup Marker Id, Colour, Pose
-void setupMarker(visualization_msgs::Marker & msg, int id, float r, float g, float b, float a, float x, float y, float theta) {
-	msg.id = 0;
-	msg.color.r = r;
-	msg.color.g = g;
-	msg.color.b = b;
-	msg.color.a = a;
+// Visualize waypoints on RViz
+void waypointVisualization () {
+	waypoints.header.frame_id = "/map";
+	waypoints.header.stamp = ros::Time::now();
+	waypoints.ns = "points_and_lines";
+	waypoints.type = visualization_msgs::Marker::POINTS;
+	waypoints.action = visualization_msgs::Marker::ADD;
+	waypoints.lifetime = ros::Duration();
 
-	msg.pose.position.x = x;
-	msg.pose.position.y = y;
+	waypoints.id = 0;
+	waypoints.color.r = 1.0;
+	waypoints.color.g = 0.0;
+	waypoints.color.b = 0.0;
+	waypoints.color.a = 1.0;
 
-	tf::Quaternion quad = tf::createQuaternionFromRPY(0, 0, theta);
-	msg.pose.orientation.x = quad[0];
-	msg.pose.orientation.y = quad[1];
-	msg.pose.orientation.z = quad[2];
-	msg.pose.orientation.w = quad[3];
+	waypoints.scale.x = 0.5;
+	waypoints.scale.y = 0.5;
+	waypoints.scale.z = 0.5;
+
+	// Build list of points to show
+	for (int a = 0; a < x_wp_list.size(); a++) {
+		geometry_msgs::Point p;
+		p.x = x_wp_list[a];
+		p.y = y_wp_list[a];
+		p.z = 0;
+	  waypoints.points.push_back(p);
+	}
 }
 
 int main(int argc, char **argv) {
@@ -338,39 +362,27 @@ int main(int argc, char **argv) {
 	// Subscribe to the desired topics and assign callbacks
 	ros::Subscriber map_sub = n.subscribe("/map", 1, map_callback);
 	ros::Subscriber pose_sub = n.subscribe("/indoor_pos", 1, pose_callback);
+	ros::Subscriber localization_sub = n.subscribe("/localization_output", 1, localization_callback);
 
 	// Setup topics to Publish from this node
-	ros::Publisher velocity_publisher = n.advertise<geometry_msgs::Twist>("/cmd_vel_mux/input/navi", 1);
+	velocity_publisher = n.advertise<geometry_msgs::Twist>("/cmd_vel_mux/input/navi", 1);
 	marker_pub = n.advertise<visualization_msgs::Marker>("visualization_marker", 1, true);
 
+	// Wait until path has been generated
+	// <PLACEHOLDER - INSERT CODE HERE>
+
 	// Visualize the three given waypoints
-	visualization_msgs::Marker waypoint_1, waypoint_2, waypoint_3;
-	waypoint_1.header.frame_id = waypoint_2.header.frame_id = waypoint_3.header.frame_id = "/map";
-	waypoint_1.header.stamp = waypoint_2.header.stamp = waypoint_3.header.stamp = ros::Time::now();
-	waypoint_1.ns = waypoint_2.ns = waypoint_3.ns = "basic_shapes";
-	waypoint_1.type = waypoint_2.type = waypoint_3.type = visualization_msgs::Marker::CUBE;
-	waypoint_1.lifetime = waypoint_2.lifetime = waypoint_3.lifetime = ros::Duration();
-	setupMarker(waypoint_1, 0, 1.0f, 0.0f, 0.0f, 0.5f, wp1[0], wp1[1], wp1[2]);
-	setupMarker(waypoint_2, 1, 0.0f, 1.0f, 0.0f, 0.5f, wp2[0], wp2[1], wp2[2]);
-	setupMarker(waypoint_3, 2, 0.0f, 0.0f, 1.0f, 0.5f, wp3[0], wp3[1], wp3[2]);
+	// waypointVisualization();
 
 	// Set control loop refresh rate to 20 Hz
 	ros::Rate control_loop_rate(20);    // 20Hz update rate
 
-	while (ros::ok())
-	{
+	while (ros::ok())	{
 		control_loop_rate.sleep(); // Maintain the loop rate
 		ros::spinOnce();   // Check for new messages
 
-			// Draw Curves
-		// drawCurve(1);
-		// drawCurve(2);
-		// drawCurve(4);
-
-		// Show visualization markers for target waypoints
-		marker_pub.publish(waypoint_1);
-		marker_pub.publish(waypoint_2);
-		marker_pub.publish(waypoint_3);
+		// Publish visualization markers for target waypoints
+		// marker_pub.publish(waypoints);
 
 		// Main loop code goes here:
 		control_loop_rate.sleep();
