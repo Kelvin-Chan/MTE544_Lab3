@@ -39,10 +39,11 @@ ros::Publisher marker_pub;
 #define map_height 100
 #define map_width 100
 #define map_size 10000
-#define num_milestones 200
+#define num_milestones 300
 #define wp_radius_tol 0.25	// 0.25 m radius tolerance for waypoints
 
 #define DEBUG_MODE 1
+#define SIMULATION 1
 static const int wp_sequence[] = {1,3,1,2,3};
 
 // ------------------------------------------------------------------
@@ -60,9 +61,15 @@ SparseMatrix<double> EdgeDistances(num_milestones, num_milestones);
 
 
 // Waypoints [x[m], y[m], θ[rad]]
-float wp1 [] = {-4.0, -4.0, 0.0};
-float wp2 [] = {-4.0, 1.0, 3.14};
-float wp3 [] = {-2.0, 1.0, -1.57};
+#ifdef SIMULATION
+float wp1 [] = {3.5, 0.0, 0.0};
+float wp2 [] = {7.5, 0.0, 3.14};
+float wp3 [] = {7.5, -3.5, -1.57};
+#else
+float wp1 [] = {4.0, 0.0, 0.0};
+float wp2 [] = {8.0, -4.0, 3.14};
+float wp3 [] = {8.0, 0.0, -1.57};
+#endif
 float *wp_list[] = {wp1, wp2, wp3};
 
 // Path planning represented as list of waypoints (x,y,theta)
@@ -79,14 +86,29 @@ float x_target, y_target, theta_target;
 
 // Velocity control variable
 geometry_msgs::Twist vel;
+
+bool initial_pose_received = false;
+bool initial_map_received = false;
+double initial_x;
+double initial_y;
 // ------------------------------------------------------------------
 
 
 // ------------------------------------------------------------------
 // Macros
-#define D2C_DISTANCE(x) double(x*10.0/100.0 - (10.0/2.0))
-#define C2D_DISTANCE(x) int((x + (10.0/2.0)) * 100.0/10.0)
+#ifdef SIMULATION
+#define C2D_DISTANCE_X(x, y) int((y + 5.0) * 100.0/10.0)
+#define C2D_DISTANCE_Y(x, y) int((x + 1.0) * 100.0/10.0)
+#define D2C_DISTANCE_X(x, y) double((y*10.0/100.0) - 1.0)
+#define D2C_DISTANCE_Y(x, y) double((x*10.0/100.0) - 5.0)
+#else
+#define C2D_DISTANCE_X(x, y) 0 //int(x * 100.0/10.0)
+#define C2D_DISTANCE_Y(x, y) 0 //int(y * 100.0/10.0)
+#define D2C_DISTANCE_X(x, y) 0 //double(x * 10.0/100.0)
+#define D2C_DISTANCE_Y(x, y) 0 //double(y * 10.0/100.0)
+#endif
 // ------------------------------------------------------------------
+void perform_prm(); // prototype
 
 //Callback function for the Position topic (LIVE)
 
@@ -95,6 +117,18 @@ void pose_callback(const geometry_msgs::PoseWithCovarianceStamped & msg) {
 	X = msg.pose.pose.position.x; // Robot X psotition
 	Y = msg.pose.pose.position.y; // Robot Y psotition
  	Yaw = tf::getYaw(msg.pose.pose.orientation); // Robot Yaw
+
+    if (!initial_pose_received)
+    {
+        initial_pose_received = true;
+        initial_x = X;
+        initial_y = Y;
+
+        if (initial_map_received)
+        {
+            perform_prm();
+        }
+    }
 
 	// std::cout << "X: " << X << ", Y: " << Y << ", Yaw: " << Yaw << std::endl ;
 }
@@ -211,12 +245,12 @@ void generate_milestones()
     // XXX: Placeholder for IPS x,y
     for (int i = 1; i < 4; i++)
     {
-        Milestones(i, 0) = C2D_DISTANCE(wp_list[i-1][0]);
-        Milestones(i, 1) = C2D_DISTANCE(wp_list[i-1][1]);
+        Milestones(i, 0) = C2D_DISTANCE_X(wp_list[i-1][0], wp_list[i-1][1]);
+        Milestones(i, 1) = C2D_DISTANCE_Y(wp_list[i-1][0], wp_list[i-1][1]);
     }
 
-    Milestones(0, 0) = 8;
-    Milestones(0, 1) = 8;
+    Milestones(0, 0) = C2D_DISTANCE_X(initial_x, initial_y);
+    Milestones(0, 1) = C2D_DISTANCE_Y(initial_x, initial_y);
 
 }
 
@@ -504,7 +538,16 @@ void visualize_path()
 void map_callback(const nav_msgs::OccupancyGrid& msg) {
     // Copy msg map data into grid map data
 	copy(msg.data.data(), msg.data.data() + map_size, grid_map.data());
+    initial_map_received = true;
 
+    if (initial_pose_received)
+    {
+        perform_prm();
+    }
+}
+
+void perform_prm()
+{
 	generate_milestones();
     if (DEBUG_MODE)
     {
