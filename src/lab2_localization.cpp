@@ -148,7 +148,7 @@ int main(int argc, char **argv)
     MatrixXd state_estimate = MatrixXd::Zero(3, 1);
 
     //Initialize the ROS framework
-    ros::init(argc,argv,"main_control");
+    ros::init(argc,argv,"localization");
     ros::NodeHandle n;
 
     // visualization
