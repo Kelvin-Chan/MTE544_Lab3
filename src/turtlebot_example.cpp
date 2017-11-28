@@ -55,6 +55,7 @@ float period = 0.05;  // Discrete Time period
 
 // ROS Publisher and Messages
 ros::Publisher velocity_publisher, marker_pub;
+visualization_msgs::Marker milestones;
 visualization_msgs::Marker waypoints;
 
 // Map declaration
@@ -330,8 +331,8 @@ void velocity_control_update() {
   // -------------------------------------------------------------------------
 }
 
-// Visualize waypoints on RViz
-void waypointVisualization() {
+// Visualize waypoint on RViz
+void waypointsVisualization() {
   waypoints.header.frame_id = "/map";
   waypoints.header.stamp = ros::Time::now();
   waypoints.ns = "points_and_lines";
@@ -349,13 +350,53 @@ void waypointVisualization() {
   waypoints.scale.y = 0.5;
   waypoints.scale.z = 0.5;
 
+
+	geometry_msgs::Point p1;
+	p1.x = wp1[0];
+	p1.y = wp1[1];
+	p1.z = 0;
+
+	geometry_msgs::Point p2;
+	p2.x = wp2[0];
+	p2.y = wp2[1];
+	p2.z = 0;
+
+	geometry_msgs::Point p3;
+	p3.x = wp3[0];
+	p3.y = wp3[1];
+	p3.z = 0;
+
+	waypoints.points.push_back(p1);
+	waypoints.points.push_back(p2);
+	waypoints.points.push_back(p3);
+}
+
+// Visualize milestones on RViz
+void milestonesVisualization() {
+  milestones.header.frame_id = "/map";
+  milestones.header.stamp = ros::Time::now();
+  milestones.ns = "points_and_lines";
+  milestones.type = visualization_msgs::Marker::LINE_STRIP;
+  milestones.action = visualization_msgs::Marker::ADD;
+  milestones.lifetime = ros::Duration();
+
+  milestones.id = 0;
+  milestones.color.r = 1.0;
+  milestones.color.g = 0.0;
+  milestones.color.b = 0.0;
+  milestones.color.a = 1.0;
+
+  milestones.scale.x = 0.5;
+  milestones.scale.y = 0.5;
+  milestones.scale.z = 0.5;
+
   // Build list of points to show
   for (int a = 0; a < x_wp_list.size(); a++) {
     geometry_msgs::Point p;
     p.x = x_wp_list[a];
     p.y = y_wp_list[a];
     p.z = 0;
-    waypoints.points.push_back(p);
+    milestones.points.push_back(p);
   }
 }
 
@@ -389,14 +430,14 @@ int main(int argc, char * * argv) {
   // <PLACEHOLDER - INSERT CODE HERE>
 
   // Visualize the three given waypoints
-  // waypointVisualization();
+  // milestonesVisualization();
 
   // Set control loop refresh rate to 20 Hz
   ros::Rate control_loop_rate(20); // 20Hz update rate
 
   // TESTING ONLY; REMOVE WHEN IMPLEMENTING
-  x_prev = 0;
-  y_prev = 0;
+  x_prev = -5;
+  y_prev = 5;
   theta_prev = 0.5;
 
   x_target = 5;
