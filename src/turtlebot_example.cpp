@@ -39,13 +39,13 @@ using namespace Eigen;
 
 // Waypoint Configurations
 #define num_milestones 200
-#define wp_radius_tol 0.25	// 0.25 m radius tolerance for waypoints
+#define wp_radius_tol 0.25 // 0.25 m radius tolerance for waypoints
 
 // Controller Configurations
-float K_P = 1;		// Proportional gain
-float K_I = 1;		// Integral gain
-float K_D = 1;		// Derivative gain
-float period = 0.05;		// Discrete Time period
+float K_P = 1;  // Proportional gain
+float K_I = 0.05;  // Integral gain
+float K_D = 0.05;  // Derivative gain
+float period = 0.05;  // Discrete Time period
 
 #define DEBUG_MODE 1
 
@@ -92,6 +92,7 @@ geometry_msgs::Twist vel;
 
 // Flags
 int endReached = 0;
+int newMsgReceived = 0;
 
 // ------------------------------------------------------------------
 
@@ -101,295 +102,324 @@ int endReached = 0;
 
 //Callback function for the Position topic (LIVE)
 void pose_callback(const geometry_msgs::PoseWithCovarianceStamped & msg) {
-	// This function is called when a new position message is received
-	X = msg.pose.pose.position.x; // Robot X psotition
-	Y = msg.pose.pose.position.y; // Robot Y psotition
- 	Yaw = tf::getYaw(msg.pose.pose.orientation); // Robot Yaw
+  // This function is called when a new position message is received
+  X = msg.pose.pose.position.x; // Robot X psotition
+  Y = msg.pose.pose.position.y; // Robot Y psotition
+  Yaw = tf::getYaw(msg.pose.pose.orientation); // Robot Yaw
 
-	// std::cout << "X: " << X << ", Y: " << Y << ", Yaw: " << Yaw << std::endl ;
+  newMsgReceived = 1;
+  // std::cout << "X: " << X << ", Y: " << Y << ", Yaw: " << Yaw << std::endl ;
 }
 
 //Example of drawing a curve
 void drawCurve(int k) {
-   // Curves are drawn as a series of stright lines
-   // Simply sample your curves into a series of points
+  // Curves are drawn as a series of stright lines
+  // Simply sample your curves into a series of points
 
-   double x = 0;
-   double y = 0;
-   double steps = 50;
+  double x = 0;
+  double y = 0;
+  double steps = 50;
 
-   visualization_msgs::Marker lines;
-   lines.header.frame_id = "/map";
-   lines.id = k; //each curve must have a unique id or you will overwrite an old ones
-   lines.type = visualization_msgs::Marker::LINE_STRIP;
-   lines.action = visualization_msgs::Marker::ADD;
-   lines.ns = "curves";
-   lines.scale.x = 0.1;
-   lines.color.r = 1.0;
-   lines.color.b = 0.2*k;
-   lines.color.a = 1.0;
+  visualization_msgs::Marker lines;
+  lines.header.frame_id = "/map";
+  lines.id = k; //each curve must have a unique id or you will overwrite an old ones
+  lines.type = visualization_msgs::Marker::LINE_STRIP;
+  lines.action = visualization_msgs::Marker::ADD;
+  lines.ns = "curves";
+  lines.scale.x = 0.1;
+  lines.color.r = 1.0;
+  lines.color.b = 0.2 * k;
+  lines.color.a = 1.0;
 
-   //generate curve points
-   for(int i = 0; i < steps; i++) {
-       geometry_msgs::Point p;
-       p.x = x;
-       p.y = y;
-       p.z = 0; //not used
-       lines.points.push_back(p);
+  //generate curve points
+  for (int i = 0; i < steps; i++) {
+    geometry_msgs::Point p;
+    p.x = x;
+    p.y = y;
+    p.z = 0; //not used
+    lines.points.push_back(p);
 
-       //curve model
-       x = x+0.1;
-       y = sin(0.1*i*k);
-   }
+    //curve model
+    x = x + 0.1;
+    y = sin(0.1 * i * k);
+  }
 
-   //publish new curve
-   marker_pub.publish(lines);
-
+  //publish new curve
+  marker_pub.publish(lines);
 }
 
 short sgn(int x) {
-    // cout << "Called sgn" << endl;
-    return x >= 0 ? 1 : -1;
+  // cout << "Called sgn" << endl;
+  return x >= 0 ? 1 : -1;
 }
 
 //Bresenham line algorithm (pass empty vectors)
 // Usage: (x0, y0) is the first point and (x1, y1) is the second point. The calculated
 //        points (x, y) are stored in the x and y vector. x and y should be empty
 //	  vectors of integers and shold be defined where this function is called from.
-void bresenham(int x0, int y0, int x1, int y1, std::vector<int>& x, std::vector<int>& y) {
-    // cout << "Called bresenham" << endl;
+void bresenham(int x0, int y0, int x1, int y1, std::vector < int > & x, std::vector < int > & y) {
+  // cout << "Called bresenham" << endl;
 
-    int dx = abs(x1 - x0);
-    int dy = abs(y1 - y0);
-    int dx2 = x1 - x0;
-    int dy2 = y1 - y0;
+  int dx = abs(x1 - x0);
+  int dy = abs(y1 - y0);
+  int dx2 = x1 - x0;
+  int dy2 = y1 - y0;
 
-    const bool s = abs(dy) > abs(dx);
+  const bool s = abs(dy) > abs(dx);
 
-    if (s) {
-        int dx2 = dx;
-        dx = dy;
-        dy = dx2;
+  if (s) {
+    int dx2 = dx;
+    dx = dy;
+    dy = dx2;
+  }
+
+  int inc1 = 2 * dy;
+  int d = inc1 - dx;
+  int inc2 = d - dx;
+
+  x.push_back(x0);
+  y.push_back(y0);
+
+  while (x0 != x1 || y0 != y1) {
+    if (s) y0 += sgn(dy2);
+    else x0 += sgn(dx2);
+    if (d < 0) d += inc1;
+    else {
+      d += inc2;
+      if (s) x0 += sgn(dx2);
+      else y0 += sgn(dy2);
     }
 
-    int inc1 = 2 * dy;
-    int d = inc1 - dx;
-    int inc2 = d - dx;
-
+    //Add point to vector
     x.push_back(x0);
     y.push_back(y0);
-
-    while (x0 != x1 || y0 != y1) {
-        if (s) y0+=sgn(dy2); else x0+=sgn(dx2);
-        if (d < 0) d += inc1;
-        else {
-            d += inc2;
-            if (s) x0+=sgn(dx2); else y0+=sgn(dy2);
-        }
-
-        //Add point to vector
-        x.push_back(x0);
-        y.push_back(y0);
-    }
+  }
 }
 
 // generate milestone points and remove point on obstacles
 void generate_milestones() {
-    // generate NUM_MILESTONES and only store them if they
-    // do not coincide with an objects, otherwise retry
+  // generate NUM_MILESTONES and only store them if they
+  // do not coincide with an objects, otherwise retry
 
-    int current_x;
-    int current_y;
+  int current_x;
+  int current_y;
 
-    for (int i = 0; i < num_milestones; i++) {
-        while (true) {
-            current_x = rand() % map_width;
-            current_y = rand() % map_height;
-            if (grid_map(current_x, current_y) == 0) {
-                break;
-            }
-        }
-        Milestones(i, 0) = current_x;
-        Milestones(i, 1) = current_y;
+  for (int i = 0; i < num_milestones; i++) {
+    while (true) {
+      current_x = rand() % map_width;
+      current_y = rand() % map_height;
+      if (grid_map(current_x, current_y) == 0) {
+        break;
+      }
     }
+    Milestones(i, 0) = current_x;
+    Milestones(i, 1) = current_y;
+  }
 }
 
 void visualize_milestones() {
-    for (int i = 0; i < num_milestones; i++) {
-        std::cout << "Milestone X: " << Milestones(i, 0) << ",  Y: " << Milestones(i, 1) << std::endl;
-    }
+  // for (int i = 0; i < num_milestones; i++) {
+  //     std::cout << "Milestone X: " << Milestones(i, 0) << ",  Y: " << Milestones(i, 1) << std::endl;
+  // }
 }
 
 // Callback function for the map
-void map_callback(const nav_msgs::OccupancyGrid& msg) {
-    // Copy msg map data into grid map data
-	copy(msg.data.data(), msg.data.data() + map_size, grid_map.data());
-	generate_milestones();
-    if (DEBUG_MODE) {
-        visualize_milestones();
-    }
+void map_callback(const nav_msgs::OccupancyGrid & msg) {
+  // Copy msg map data into grid map data
+  copy(msg.data.data(), msg.data.data() + map_size, grid_map.data());
+  generate_milestones();
+  if (DEBUG_MODE) {
+    visualize_milestones();
+  }
 }
 
 // Callback function for the localization
-void localization_callback(const geometry_msgs::PoseStamped& msg) {
-	X_l = msg.pose.position.x;
-	Y_l = msg.pose.position.y;
-	Yaw_l = tf::getYaw(msg.pose.orientation);
+void localization_callback(const geometry_msgs::PoseStamped & msg) {
+  X_l = msg.pose.position.x;
+  Y_l = msg.pose.position.y;
+  Yaw_l = tf::getYaw(msg.pose.orientation);
+
+  newMsgReceived = 1;
 }
 
 // Generate velocity commands based on planned waypoints, current robot pose
 void velocity_control_update() {
-	 // Return if completed
-	 if (endReached) {
-		 return;
-	 }
+  newMsgReceived = 0;
 
-	 // Distance between robot position and target waypoint
-	 float robot_dist = sqrt(pow((x_target - X), 2) + pow((y_target - Y), 2));
+  // Return if completed
+  if (endReached) {
+    return;
+  }
 
-	 // If robot position is within waypoint radius tolerance
-	 // Pop deque for next waypoint
-	 if (robot_dist < wp_radius_tol) {
-		 // Store previous waypoint
-		 x_prev = x_target;
-		 y_prev = y_target;
-		 theta_prev = theta_target;
+  // Distance between robot position and target waypoint
+  float robot_dist = sqrt(pow((x_target - X), 2) + pow((y_target - Y), 2));
 
-		 // Grab new waypoints if they exist
-		 if (x_wp_list.size() + y_wp_list.size() + theta_wp_list.size() > 0) {
-			 x_target = x_wp_list[0];
-			 y_target = y_wp_list[0];
-			 theta_target = theta_wp_list[0];
+  // If robot position is within waypoint radius tolerance
+  // Pop deque for next waypoint
+  if (robot_dist < wp_radius_tol) {
+    // Store previous waypoint
+    x_prev = x_target;
+    y_prev = y_target;
+    theta_prev = theta_target;
 
-			 // Pop element from queue
-			 x_wp_list.pop_front();
-			 y_wp_list.pop_front();
-			 theta_wp_list.pop_front();
-		 } else {
-			 // End reached, stop robot and exit function
-			 vel.linear.x = 0;
-			 vel.angular.z = 0;
-			 endReached = 1;
-			 return;
-		 }
-	 }
+    // Grab new waypoints if they exist
+    if (x_wp_list.size() + y_wp_list.size() + theta_wp_list.size() > 0) {
+      x_target = x_wp_list[0];
+      y_target = y_wp_list[0];
+      theta_target = theta_wp_list[0];
 
-	 // -------------------------------------------------------------------------
-	 // HEADING CONTROLLER
-	 // Path heading is the reference that the robot heading is trying to track
-	 // Using error between robot heading and path heading to control yaw
-	 // Using discretized PID control
-	 // -------------------------------------------------------------------------
-	 // Use closed-loop controller to correct robot path between two waypoints
-	 // Distance between previous & target waypoints [rad]
-	 float path_dist = sqrt(pow((x_target - x_prev), 2) + pow((y_target - y_prev), 2));
+      // Pop element from queue
+      x_wp_list.pop_front();
+      y_wp_list.pop_front();
+      theta_wp_list.pop_front();
+    } else {
+      // End reached, stop robot and exit function
+      vel.linear.x = 0;
+      vel.angular.z = 0;
+      endReached = 1;
+      return;
+    }
+  }
 
-	 // Heading between previous & target waypoints [rad]
-	 float path_heading = atan2((y_target - y_prev),(x_target - x_prev));
+  // -------------------------------------------------------------------------
+  // HEADING CONTROLLER
+  // Path heading is the reference that the robot heading is trying to track
+  // Using error between robot heading and path heading to control yaw
+  // Using discretized PID control
+  // -------------------------------------------------------------------------
+  // Use closed-loop controller to correct robot path between two waypoints
+  // Distance between previous & target waypoints [rad]
+  float path_dist = sqrt(pow((x_target - x_prev), 2) + pow((y_target - y_prev), 2));
 
-	 // Heading between robot position & target waypoint [rad]
-	 float robot_heading = atan2((y_target - Y),(x_target - X));
+  // Heading between previous & target waypoints [rad]
+  float path_heading = atan2((y_target - y_prev), (x_target - x_prev));
 
-	 // Update r, y, e; keeping constant history size
-	 r.push_front(path_heading);
-	 r.pop_back();
+  // Heading between robot position & target waypoint [rad]
+  float robot_heading = atan2((y_target - Y), (x_target - X));
 
-	 y.push_front(robot_heading);
-	 y.pop_back();
+  // Update r, y, e; keeping constant history size
+  r.push_front(path_heading);
+  r.pop_back();
 
-	 e.push_front(r[0] - y[0]);
-	 e.pop_back();
+  // Yaw offset of 90 degs for heading
+  y.push_front(robot_heading + Yaw - M_PI/2);
+  y.pop_back();
 
-	 // Update u with difference equation in terms of K_P, K_I, K_D, T
-	 u.push_front(e[0]*(K_P + K_I*period/2 + 2*(K_D/period)) +
-	 							e[1]*(K_I*period - 4*K_D/period) +
-								e[2]*(-K_P + K_I*period/2 + 2*K_D/period) + u[1]);
-	 u.pop_back();
+  e.push_front(r[0] - y[0]);
+  e.pop_back();
 
-	 // Can only command turtlebot for linear x & angular z
-	 // Constant linear velocity
-	 vel.linear.x = 0.1;
-	 vel.angular.z = u[0];
-	  // -------------------------------------------------------------------------
- }
+  // Update u with difference equation in terms of K_P, K_I, K_D, T
+  u.push_front(e[0] * (K_P + K_I * period / 2 + 2 * (K_D / period)) +
+    e[1] * (K_I * period - 4 * K_D / period) +
+    e[2] * (-K_P + K_I * period / 2 + 2 * K_D / period) + u[1]);
+  u.pop_back();
 
-// Visualize waypoints on RViz
-void waypointVisualization () {
-	waypoints.header.frame_id = "/map";
-	waypoints.header.stamp = ros::Time::now();
-	waypoints.ns = "points_and_lines";
-	waypoints.type = visualization_msgs::Marker::POINTS;
-	waypoints.action = visualization_msgs::Marker::ADD;
-	waypoints.lifetime = ros::Duration();
+  // Can only command turtlebot for linear x & angular z
+  // Constant linear velocity
+  vel.linear.x = 0.1;
+  vel.angular.z = u[0];
 
-	waypoints.id = 0;
-	waypoints.color.r = 1.0;
-	waypoints.color.g = 0.0;
-	waypoints.color.b = 0.0;
-	waypoints.color.a = 1.0;
+  if (DEBUG_MODE) {
+	  cout << "------------------------------------------------\n"
+	  	<< "path_heading: " << path_heading << " [rad]\n"
+	  	<< "robot_heading: " << robot_heading << " [rad]\n"
+		<< "u: " << u[0] << " [rad/s]\n"
+		<< "------------------------------------------------\n" << endl;
+  }
 
-	waypoints.scale.x = 0.5;
-	waypoints.scale.y = 0.5;
-	waypoints.scale.z = 0.5;
-
-	// Build list of points to show
-	for (int a = 0; a < x_wp_list.size(); a++) {
-		geometry_msgs::Point p;
-		p.x = x_wp_list[a];
-		p.y = y_wp_list[a];
-		p.z = 0;
-	  waypoints.points.push_back(p);
-	}
+  // -------------------------------------------------------------------------
 }
 
-int main(int argc, char **argv) {
-	// Initialize map
-	grid_map = 50*MatrixXi::Ones(map_height, map_width);
+// Visualize waypoints on RViz
+void waypointVisualization() {
+  waypoints.header.frame_id = "/map";
+  waypoints.header.stamp = ros::Time::now();
+  waypoints.ns = "points_and_lines";
+  waypoints.type = visualization_msgs::Marker::POINTS;
+  waypoints.action = visualization_msgs::Marker::ADD;
+  waypoints.lifetime = ros::Duration();
 
-	// Initialize control variables
-	// Second-order controller; history size of 3
-	for (int a = 0; a < 3; a++) {
-		r.push_back(0);
-		e.push_back(0);
-		u.push_back(0);
-		y.push_back(0);
-	}
+  waypoints.id = 0;
+  waypoints.color.r = 1.0;
+  waypoints.color.g = 0.0;
+  waypoints.color.b = 0.0;
+  waypoints.color.a = 1.0;
 
-	// Initialize the ROS framework
-	ros::init(argc,argv,"main_control");
-	ros::NodeHandle n;
+  waypoints.scale.x = 0.5;
+  waypoints.scale.y = 0.5;
+  waypoints.scale.z = 0.5;
 
-	// Subscribe to the desired topics and assign callbacks
-	ros::Subscriber map_sub = n.subscribe("/map", 1, map_callback);
-	ros::Subscriber pose_sub = n.subscribe("/indoor_pos", 1, pose_callback);
-	ros::Subscriber localization_sub = n.subscribe("/localization_output", 1, localization_callback);
+  // Build list of points to show
+  for (int a = 0; a < x_wp_list.size(); a++) {
+    geometry_msgs::Point p;
+    p.x = x_wp_list[a];
+    p.y = y_wp_list[a];
+    p.z = 0;
+    waypoints.points.push_back(p);
+  }
+}
 
-	// Setup topics to Publish from this node
-	velocity_publisher = n.advertise<geometry_msgs::Twist>("/cmd_vel_mux/input/navi", 1);
-	marker_pub = n.advertise<visualization_msgs::Marker>("visualization_marker", 1, true);
+int main(int argc, char * * argv) {
+  // Initialize map
+  grid_map = 50 * MatrixXi::Ones(map_height, map_width);
 
-	// Wait until path has been generated
-	// <PLACEHOLDER - INSERT CODE HERE>
+  // Initialize control variables
+  // Second-order controller; history size of 3
+  for (int a = 0; a < 3; a++) {
+    r.push_back(0);
+    e.push_back(0);
+    u.push_back(0);
+    y.push_back(0);
+  }
 
-	// Visualize the three given waypoints
-	// waypointVisualization();
+  // Initialize the ROS framework
+  ros::init(argc, argv, "main_control");
+  ros::NodeHandle n;
 
-	// Set control loop refresh rate to 20 Hz
-	ros::Rate control_loop_rate(20);    // 20Hz update rate
+  // Subscribe to the desired topics and assign callbacks
+  ros::Subscriber map_sub = n.subscribe("/map", 1, map_callback);
+  ros::Subscriber pose_sub = n.subscribe("/indoor_pos", 1, pose_callback);
+  ros::Subscriber localization_sub = n.subscribe("/localization_output", 1, localization_callback);
 
-	while (ros::ok())	{
-		control_loop_rate.sleep(); // Maintain the loop rate
-		ros::spinOnce();   // Check for new messages
+  // Setup topics to Publish from this node
+  velocity_publisher = n.advertise < geometry_msgs::Twist > ("/cmd_vel_mux/input/navi", 1);
+  marker_pub = n.advertise < visualization_msgs::Marker > ("visualization_marker", 1, true);
 
-		// Publish visualization markers for target waypoints
-		// marker_pub.publish(waypoints);
+  // Wait until path has been generated
+  // <PLACEHOLDER - INSERT CODE HERE>
 
-		// Main loop code goes here:
-		control_loop_rate.sleep();
-		// velocity_control_update();
+  // Visualize the three given waypoints
+  // waypointVisualization();
 
-		// velocity_publisher.publish(vel); // Publish the command velocity
-	}
+  // Set control loop refresh rate to 20 Hz
+  ros::Rate control_loop_rate(20); // 20Hz update rate
 
-	return 0;
+  // TESTING ONLY; REMOVE WHEN IMPLEMENTING
+  x_prev = 0;
+  y_prev = 0;
+  theta_prev = 0.5;
+
+  x_target = 5;
+  y_target = 5;
+  theta_target = 0.5;
+
+  while (ros::ok()) {
+    control_loop_rate.sleep(); // Maintain the loop rate
+    ros::spinOnce(); // Check for new messages
+
+    // Publish visualization markers for target waypoints
+    // marker_pub.publish(waypoints);
+
+    // Main loop code goes here:
+    control_loop_rate.sleep();
+
+    // Update velocity control when new IPS/localization msg received
+    if (newMsgReceived) {
+      velocity_control_update();
+    }
+
+    velocity_publisher.publish(vel); // Publish the command velocity
+  }
+
+  return 0;
 }
