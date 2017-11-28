@@ -33,10 +33,21 @@ using namespace Eigen;
 #define TAGID 0
 
 // ------------------------------------------------------------------
+#define DEBUG_MODE 1
+#define SIMULATION 1
+
 // Map Configurations
+#ifdef SIMULATION
 #define map_height 100
 #define map_width 100
 #define map_size 10000
+
+#else
+#define map_height 70
+#define map_width 70
+#define map_size 4900
+
+#endif
 
 // Waypoint Configurations
 #define num_milestones 300
@@ -48,8 +59,7 @@ float K_I = 1;		// Integral gain
 float K_D = 1;		// Derivative gain
 float period = 0.05;		// Discrete Time period
 
-#define DEBUG_MODE 1
-#define SIMULATION 1
+#define DILATION_KERNEL_SIZE 2
 static const int wp_sequence[] = {1,3,1,2,3};
 
 // ------------------------------------------------------------------
@@ -63,6 +73,7 @@ visualization_msgs::Marker waypoints;
 // Map declaration
 // Map is stored as RowMajor array
 Matrix<int,Dynamic,Dynamic,RowMajor> grid_map;
+MatrixXd tmp_grid_map = MatrixXd::Zero(map_width, map_height);
 
 // Milestones (Col0: X, Col1: Y)
 Matrix<int, num_milestones, 2, RowMajor> Milestones;
@@ -588,6 +599,63 @@ void map_callback(const nav_msgs::OccupancyGrid& msg) {
 	copy(msg.data.data(), msg.data.data() + map_size, grid_map.data());
     initial_map_received = true;
 
+
+    // perform morphological dilation on map to exagerate obstacles
+    int i;
+    int j;
+    int k;
+    int l;
+
+    for (i = 0; i < map_width; i++)
+    {
+        for (j = 0; j < map_height; j++)
+        {
+            if (grid_map(i,j) != 0)
+            {
+                for (k = (i-DILATION_KERNEL_SIZE); k <= (i+DILATION_KERNEL_SIZE); k++)
+                {
+                    for (l = (j-DILATION_KERNEL_SIZE); l <= (j+DILATION_KERNEL_SIZE); l++)
+                    {
+                        if ((k >=0) and (k < map_width) and (l >= 0) and (l < map_height))
+                        {
+                            tmp_grid_map(k,l) += 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    for (i = 0; i < map_width; i++)
+    {
+        for (j = 0; j < map_height; j++)
+        {
+            if (tmp_grid_map(i,j) == 0)
+            {
+                grid_map(i,j) = 0;
+            }
+            else
+            {
+                grid_map(i,j) = 100;
+            }
+        }
+    }
+
+
+    if (DEBUG_MODE)
+    {
+        std::cout << "occmap = [";
+        for (j = 0; j < map_height; j++)
+        {
+            for (i = 0; i < map_width; i++)
+            {
+                std::cout << grid_map(i,j) << " ";
+            }
+            std::cout << "; ";
+        }
+        std::cout << "];" << std::endl;
+    }
+
     if (initial_pose_received)
     {
         perform_prm();
@@ -597,7 +665,8 @@ void map_callback(const nav_msgs::OccupancyGrid& msg) {
 void perform_prm()
 {
 	generate_milestones();
-    if (DEBUG_MODE) {
+    if (DEBUG_MODE)
+    {
         visualize_milestones();
     }
 
