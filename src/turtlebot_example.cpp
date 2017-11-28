@@ -45,10 +45,10 @@ ros::Publisher marker_pub;
 #define wp_radius_tol 0.25	// 0.25 m radius tolerance for waypoints
 
 // Controller Configurations
-#define K_P 1		// Proportional gain
-#define K_I 1		// Integral gain
-#define K_D 1		// Derivative gain
-#define T 0.05	// Discrete Time period
+float K_P = 1;		// Proportional gain
+float K_I = 1;		// Integral gain
+float K_D = 1;		// Derivative gain
+float period = 0.05;		// Discrete Time period
 
 #define DEBUG_MODE 1
 
@@ -70,7 +70,8 @@ float wp3 [] = {8.0, 0.0, -1.57};
 // Path planning represented as list of waypoints (x,y,theta)
 deque<float> x_wp_list, y_wp_list, theta_wp_list;
 
-// Robot Position
+// Current Robot Position
+// This should be augmented by localization for increased performance
 double X, Y, Yaw;
 
 // Past and current target waypoint
@@ -268,8 +269,7 @@ void map_callback(const nav_msgs::OccupancyGrid& msg) {
 	 // -------------------------------------------------------------------------
 	 // Use closed-loop controller to correct robot path between two waypoints
 	 // Distance between previous & target waypoints [rad]
-	 float path_dist = sqrt(pow((x_target - x_prev), 2)
-	 										+ pow((y_target - y_prev), 2));
+	 float path_dist = sqrt(pow((x_target - x_prev), 2) + pow((y_target - y_prev), 2));
 
 	 // Heading between previous & target waypoints [rad]
 	 float path_heading = atan2((y_target - y_prev),(x_target - x_prev));
@@ -281,14 +281,16 @@ void map_callback(const nav_msgs::OccupancyGrid& msg) {
 	 r.push_front(path_heading);
 	 r.pop_back();
 
-	 y.push_front(robot_heading)
+	 y.push_front(robot_heading);
 	 y.pop_back();
 
 	 e.push_front(r[0] - y[0]);
 	 e.pop_back();
 
-	 // Update u with difference equation in terms of K_
-	 u.push_front(0 /*Insert difference equation here*/);
+	 // Update u with difference equation in terms of K_P, K_I, K_D, T
+	 u.push_front(e[0]*(K_P + K_I*period/2 + 2*(K_D/period)) +
+	 							e[1]*(K_I*period - 4*K_D/period) +
+								e[2]*(-K_P + K_I*period/2 + 2*K_D/period) + u[1]);
 	 u.pop_back();
 
 	 // Can only command turtlebot for linear x & angular z
@@ -298,11 +300,30 @@ void map_callback(const nav_msgs::OccupancyGrid& msg) {
 	  // -------------------------------------------------------------------------
  }
 
+// Setup Marker Id, Colour, Pose
+void setupMarker(visualization_msgs::Marker & msg, int id, float r, float g, float b, float a, float x, float y, float theta) {
+	msg.id = 0;
+	msg.color.r = r;
+	msg.color.g = g;
+	msg.color.b = b;
+	msg.color.a = a;
+
+	msg.pose.position.x = x;
+	msg.pose.position.y = y;
+
+	tf::Quaternion quad = tf::createQuaternionFromRPY(0, 0, theta);
+	msg.pose.orientation.x = quad[0];
+	msg.pose.orientation.y = quad[1];
+	msg.pose.orientation.z = quad[2];
+	msg.pose.orientation.w = quad[3];
+}
+
 int main(int argc, char **argv) {
 	// Initialize map
 	grid_map = 50*MatrixXi::Ones(map_height, map_width);
 
 	// Initialize control variables
+	// Second-order controller; history size of 3
 	for (int a = 0; a < 3; a++) {
 		r.push_back(0);
 		e.push_back(0);
@@ -310,37 +331,53 @@ int main(int argc, char **argv) {
 		y.push_back(0);
 	}
 
-	//Initialize the ROS framework
-    ros::init(argc,argv,"main_control");
-    ros::NodeHandle n;
+	// Initialize the ROS framework
+	ros::init(argc,argv,"main_control");
+	ros::NodeHandle n;
 
-    //Subscribe to the desired topics and assign callbacks
-    ros::Subscriber map_sub = n.subscribe("/map", 1, map_callback);
-    ros::Subscriber pose_sub = n.subscribe("/indoor_pos", 1, pose_callback);
+	// Subscribe to the desired topics and assign callbacks
+	ros::Subscriber map_sub = n.subscribe("/map", 1, map_callback);
+	ros::Subscriber pose_sub = n.subscribe("/indoor_pos", 1, pose_callback);
 
-    //Setup topics to Publish from this node
-    ros::Publisher velocity_publisher = n.advertise<geometry_msgs::Twist>("/cmd_vel_mux/input/navi", 1);
-    marker_pub = n.advertise<visualization_msgs::Marker>("visualization_marker", 1, true);
+	// Setup topics to Publish from this node
+	ros::Publisher velocity_publisher = n.advertise<geometry_msgs::Twist>("/cmd_vel_mux/input/navi", 1);
+	marker_pub = n.advertise<visualization_msgs::Marker>("visualization_marker", 1, true);
 
-    //Set the loop rate
-    ros::Rate loop_rate(20);    //20Hz update rate
+	// Visualize the three given waypoints
+	visualization_msgs::Marker waypoint_1, waypoint_2, waypoint_3;
+	waypoint_1.header.frame_id = waypoint_2.header.frame_id = waypoint_3.header.frame_id = "/map";
+	waypoint_1.header.stamp = waypoint_2.header.stamp = waypoint_3.header.stamp = ros::Time::now();
+	waypoint_1.ns = waypoint_2.ns = waypoint_3.ns = "basic_shapes";
+	waypoint_1.type = waypoint_2.type = waypoint_3.type = visualization_msgs::Marker::CUBE;
+	waypoint_1.lifetime = waypoint_2.lifetime = waypoint_3.lifetime = ros::Duration();
+	setupMarker(waypoint_1, 0, 1.0f, 0.0f, 0.0f, 0.5f, wp1[0], wp1[1], wp1[2]);
+	setupMarker(waypoint_2, 1, 0.0f, 1.0f, 0.0f, 0.5f, wp2[0], wp2[1], wp2[2]);
+	setupMarker(waypoint_3, 2, 0.0f, 0.0f, 1.0f, 0.5f, wp3[0], wp3[1], wp3[2]);
 
+	// Set control loop refresh rate to 20 Hz
+	ros::Rate control_loop_rate(20);    // 20Hz update rate
 
-    while (ros::ok())
-    {
-    	loop_rate.sleep(); // Maintain the loop rate
-    	ros::spinOnce();   // Check for new messages
+	while (ros::ok())
+	{
+		control_loop_rate.sleep(); // Maintain the loop rate
+		ros::spinOnce();   // Check for new messages
 
-	 	// Draw Curves
-         drawCurve(1);
-         drawCurve(2);
-         drawCurve(4);
+			// Draw Curves
+		// drawCurve(1);
+		// drawCurve(2);
+		// drawCurve(4);
 
-    	// Main loop code goes here:
-    	velocity_control_update();
+		// Show visualization markers for target waypoints
+		marker_pub.publish(waypoint_1);
+		marker_pub.publish(waypoint_2);
+		marker_pub.publish(waypoint_3);
 
-    	velocity_publisher.publish(vel); // Publish the command velocity
-    }
+		// Main loop code goes here:
+		control_loop_rate.sleep();
+		// velocity_control_update();
 
-    return 0;
+		// velocity_publisher.publish(vel); // Publish the command velocity
+	}
+
+	return 0;
 }
