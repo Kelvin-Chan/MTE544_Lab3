@@ -5,4 +5,4 @@ Delete old turtlebot_example folder inside catkin_ws/src
 
 Inside the same folder, run the following commands:
 
-```git clone git@github.com:Kelvin-Chan/MTE544_Lab3.git -o turtlebot_example```
+```git clone git@github.com:Kelvin-Chan/MTE544_Lab3.git turtlebot_example```
