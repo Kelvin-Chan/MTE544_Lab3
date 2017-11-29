@@ -24,6 +24,7 @@
 #include <deque>
 #include <algorithm>
 #include <cmath>
+#include <math.h>
 #include <stdint.h>
 
 // Namespace
@@ -54,9 +55,9 @@ using namespace Eigen;
 #define wp_radius_tol 0.25	// 0.25 m radius tolerance for waypoints
 
 // Controller Configurations
-float K_P = 1;		// Proportional gain
-float K_I = 1;		// Integral gain
-float K_D = 1;		// Derivative gain
+float K_P = -1;		// Proportional gain
+float K_I = 0;		// Integral gain
+float K_D = 0;		// Derivative gain
 float period = 0.05;		// Discrete Time period
 
 #define DILATION_KERNEL_SIZE 2
@@ -68,6 +69,7 @@ static const int wp_sequence[] = {1,3,1,2,3};
 
 // ROS Publisher and Messages
 ros::Publisher velocity_publisher, marker_pub;
+visualization_msgs::Marker milestones;
 visualization_msgs::Marker waypoints;
 
 // Map declaration
@@ -118,11 +120,14 @@ geometry_msgs::Twist vel;
 
 // Flags
 int endReached = 0;
+int newMsgReceived = 0;
+int markersVisualized = 0;
+int wpNotGrabbed = 1;
 
 bool initial_pose_received = false;
 bool initial_map_received = false;
-double initial_x;
-double initial_y;
+bool prm_generated = false;
+double initial_x, initial_y;
 // ------------------------------------------------------------------
 
 
@@ -152,6 +157,7 @@ void pose_callback(const geometry_msgs::PoseWithCovarianceStamped & msg) {
 	X = msg.pose.pose.position.x; // Robot X psotition
 	Y = msg.pose.pose.position.y; // Robot Y psotition
  	Yaw = tf::getYaw(msg.pose.pose.orientation); // Robot Yaw
+    newMsgReceived = 1;
 
     if (!initial_pose_received)
     {
@@ -681,6 +687,8 @@ void perform_prm()
     {
         visualize_path();
     }
+
+    prm_generated = true;
 }
 
 // Callback function for the localization
@@ -692,157 +700,311 @@ void localization_callback(const geometry_msgs::PoseStamped& msg) {
 
 // Generate velocity commands based on planned waypoints, current robot pose
 void velocity_control_update() {
-	 // Return if completed
-	 if (endReached) {
-		 return;
-	 }
+    newMsgReceived = 0;
 
-	 // Distance between robot position and target waypoint
-	 float robot_dist = sqrt(pow((x_target - X), 2) + pow((y_target - Y), 2));
+    // Return if completed
+    if (endReached) {
+        return;
+    }
 
-	 // If robot position is within waypoint radius tolerance
-	 // Pop deque for next waypoint
-	 if (robot_dist < wp_radius_tol) {
-		 // Store previous waypoint
-		 x_prev = x_target;
-		 y_prev = y_target;
-		 theta_prev = theta_target;
+    // Distance between robot position and target waypoint
+    float robot_dist = sqrt(pow((double) (x_target - X), 2) + pow((double) (y_target - Y), 2));
 
-		 // Grab new waypoints if they exist
-		 if (x_wp_list.size() + y_wp_list.size() + theta_wp_list.size() > 0) {
-			 x_target = x_wp_list[0];
-			 y_target = y_wp_list[0];
-			 theta_target = theta_wp_list[0];
+    // If robot position is within waypoint radius tolerance
+    // Pop deque for next waypoint
+    if (robot_dist < wp_radius_tol) {
 
-			 // Pop element from queue
-			 x_wp_list.pop_front();
-			 y_wp_list.pop_front();
-			 theta_wp_list.pop_front();
-		 } else {
-			 // End reached, stop robot and exit function
-			 vel.linear.x = 0;
-			 vel.angular.z = 0;
-			 endReached = 1;
-			 return;
-		 }
-	 }
+        if (DEBUG_MODE) {
+            cout << "Milestone Reached" << endl;
+        }
 
-	 // -------------------------------------------------------------------------
-	 // HEADING CONTROLLER
-	 // Path heading is the reference that the robot heading is trying to track
-	 // Using error between robot heading and path heading to control yaw
-	 // Using discretized PID control
-	 // -------------------------------------------------------------------------
-	 // Use closed-loop controller to correct robot path between two waypoints
-	 // Distance between previous & target waypoints [rad]
-	 float path_dist = sqrt(pow((x_target - x_prev), 2) + pow((y_target - y_prev), 2));
+        // Check if target yaw is specified and not yet reached
+        if (theta_target != -1 && abs(theta_target - Yaw) > 0.01) {
+            if (DEBUG_MODE) {
+                cout << "Adjusting yaw to waypoint target" << endl;
+            }
 
-	 // Heading between previous & target waypoints [rad]
-	 float path_heading = atan2((y_target - y_prev),(x_target - x_prev));
+            r.push_front(theta_target - M_PI/2);
+            r.pop_back();
 
-	 // Heading between robot position & target waypoint [rad]
-	 float robot_heading = atan2((y_target - Y),(x_target - X));
+            y.push_front(Yaw - M_PI/2);
+            y.pop_back();
 
-	 // Update r, y, e; keeping constant history size
-	 r.push_front(path_heading);
-	 r.pop_back();
+            e.push_front(cos(r[0] - y[0]));
+            e.pop_back();
 
-	 y.push_front(robot_heading);
-	 y.pop_back();
+            // Proportional controller
+            u.push_front(K_P*e[0]);
+            u.pop_back();
 
-	 e.push_front(r[0] - y[0]);
-	 e.pop_back();
+            vel.linear.x = 0;
+            vel.angular.z = u[0];
+            return;
+        } else {
+            // Store previous waypoint
+            x_prev = x_target;
+            y_prev = y_target;
+            theta_prev = theta_target;
 
-	 // Update u with difference equation in terms of K_P, K_I, K_D, T
-	 u.push_front(e[0]*(K_P + K_I*period/2 + 2*(K_D/period)) +
-	 							e[1]*(K_I*period - 4*K_D/period) +
-								e[2]*(-K_P + K_I*period/2 + 2*K_D/period) + u[1]);
-	 u.pop_back();
+            // Grab new waypoints if they exist
+            if (x_wp_list.size() + y_wp_list.size() + theta_wp_list.size() > 0) {
+                x_target = x_wp_list[0];
+                y_target = y_wp_list[0];
+                theta_target = theta_wp_list[0];
 
-	 // Can only command turtlebot for linear x & angular z
-	 // Constant linear velocity
-	 vel.linear.x = 0.1;
-	 vel.angular.z = u[0];
-	  // -------------------------------------------------------------------------
- }
+                if (DEBUG_MODE) {
+                    cout << "New Waypoint: (" << x_target << ", " << y_target << ")" << endl;
+                }
 
-// Visualize waypoints on RViz
-void waypointVisualization () {
-	waypoints.header.frame_id = "/map";
-	waypoints.header.stamp = ros::Time::now();
-	waypoints.ns = "points_and_lines";
-	waypoints.type = visualization_msgs::Marker::POINTS;
-	waypoints.action = visualization_msgs::Marker::ADD;
-	waypoints.lifetime = ros::Duration();
+                // Pop element from queue
+                x_wp_list.pop_front();
+                y_wp_list.pop_front();
+                theta_wp_list.pop_front();
+            } else {
+                // End reached, stop robot and exit function
+                if (DEBUG_MODE) {
+                    cout << "Last waypoint reached" << endl;
+                }
+                vel.linear.x = 0;
+                vel.angular.z = 0;
+                endReached = 1;
+                return;
+            }
+        }
+    }
 
-	waypoints.id = 0;
-	waypoints.color.r = 1.0;
-	waypoints.color.g = 0.0;
-	waypoints.color.b = 0.0;
-	waypoints.color.a = 1.0;
+    // -------------------------------------------------------------------------
+    // HEADING CONTROLLER
+    // Robot heading is the reference that the robot yaw is trying to track
+    // Using error between robot heading and yaw to control angular velocity
+    // -------------------------------------------------------------------------
+    // Use closed-loop controller to correct robot path between two waypoints
+    // Distance between previous & target waypoints [rad]
+    float path_dist = sqrt(pow((double) (x_target - x_prev), 2) + pow((double) (y_target - y_prev), 2));
 
-	waypoints.scale.x = 0.5;
-	waypoints.scale.y = 0.5;
-	waypoints.scale.z = 0.5;
+    // Heading between previous & target waypoints [rad]
+    float path_heading = atan2((double) (y_target - y_prev), (double) (x_target - x_prev));
 
-	// Build list of points to show
-	for (int a = 0; a < x_wp_list.size(); a++) {
-		geometry_msgs::Point p;
-		p.x = x_wp_list[a];
-		p.y = y_wp_list[a];
-		p.z = 0;
-	  waypoints.points.push_back(p);
-	}
+    // Heading between robot position & target waypoint [rad]
+    // float robot_heading = atan2((y_target - Y), (x_target - X));
+    float robot_heading = atan2((double) (y_target - Y), (double) (x_target - X));
+
+    // Update r, y, e; keeping constant history size
+    r.push_front(robot_heading);
+    r.pop_back();
+
+    // Yaw offset of 90 degs; Yaw is CCW, Heading is CW from horizontal
+    // y.push_front(robot_heading - Yaw + M_PI/2);
+    y.push_front(Yaw - M_PI/2);
+    y.pop_back();
+
+    e.push_front(cos(r[0] - y[0]));
+    e.pop_back();
+
+    // Update u with difference equation in terms of K_P, K_I, K_D, T
+    // u.push_front(e[0] * (K_P + K_I * period / 2 + 2 * (K_D / period)) +
+    //   e[1] * (K_I * period - 4 * K_D / period) +
+    //   e[2] * (-K_P + K_I * period / 2 + 2 * K_D / period) + u[1]);
+
+    // Proportional controller
+    u.push_front(K_P*e[0]);
+    u.pop_back();
+
+    // Can only command turtlebot for linear x & angular z
+    // vel.linear.x = 0.1;
+
+    // Bang-Bang controller for linear velocity
+    if (abs(e[0]) < 0.01) {
+        vel.linear.x = 0.1;
+    } else {
+        vel.linear.x = 0;
+    }
+
+    vel.angular.z = u[0];
+
+    if (DEBUG_MODE) {
+        cout << "------------------------------------------------\n"
+             << "path_heading: " << path_heading << " [rad]\n"
+             << "robot_heading: " << robot_heading << " [rad]\n"
+             << "robot_dist: " << robot_dist << " [m]\n"
+             << "e: " << e[0] << " [rad]\n"
+             << "u: " << u[0] << " [rad/s]\n"
+             << "Robot X: " << X << " [m]\n"
+             << "Robot Y: " << Y << " [m]\n"
+             << "Robot Yaw: " << Yaw << " [rad]\n"
+             << "Current Target: (" << x_target << ", " << y_target << ")\n"
+             << "------------------------------------------------\n" << endl;
+    }
+
+    // -------------------------------------------------------------------------
 }
 
-int main(int argc, char **argv) {
-	// Initialize map
-	grid_map = 50*MatrixXi::Ones(map_height, map_width);
+// Visualize waypoint on RViz
+void waypointsVisualization() {
+    waypoints.header.frame_id = "/map";
+    waypoints.header.stamp = ros::Time::now();
+    waypoints.ns = "points_and_lines";
+    waypoints.type = visualization_msgs::Marker::POINTS;
+    waypoints.action = visualization_msgs::Marker::ADD;
+    waypoints.lifetime = ros::Duration();
 
-	// Initialize control variables
-	// Second-order controller; history size of 3
-	for (int a = 0; a < 3; a++) {
-		r.push_back(0);
-		e.push_back(0);
-		u.push_back(0);
-		y.push_back(0);
-	}
+    waypoints.id = 0;
+    waypoints.color.r = 1.0;
+    waypoints.color.g = 0.0;
+    waypoints.color.b = 0.0;
+    waypoints.color.a = 1.0;
 
-	// Initialize the ROS framework
-	ros::init(argc,argv,"main_control");
-	ros::NodeHandle n;
+    waypoints.scale.x = 0.5;
+    waypoints.scale.y = 0.5;
+    waypoints.scale.z = 0.5;
 
-	// Subscribe to the desired topics and assign callbacks
-	ros::Subscriber map_sub = n.subscribe("/map", 1, map_callback);
-	ros::Subscriber pose_sub = n.subscribe("/indoor_pos", 1, pose_callback);
-	ros::Subscriber localization_sub = n.subscribe("/localization_output", 1, localization_callback);
 
-	// Setup topics to Publish from this node
-	velocity_publisher = n.advertise<geometry_msgs::Twist>("/cmd_vel_mux/input/navi", 1);
-	marker_pub = n.advertise<visualization_msgs::Marker>("visualization_marker", 1, true);
+    geometry_msgs::Point p1;
+    p1.x = wp1[0];
+    p1.y = wp1[1];
+    p1.z = 0;
 
-	// Wait until path has been generated
-	// <PLACEHOLDER - INSERT CODE HERE>
+    geometry_msgs::Point p2;
+    p2.x = wp2[0];
+    p2.y = wp2[1];
+    p2.z = 0;
 
-	// Visualize the three given waypoints
-	// waypointVisualization();
+    geometry_msgs::Point p3;
+    p3.x = wp3[0];
+    p3.y = wp3[1];
+    p3.z = 0;
 
-	// Set control loop refresh rate to 20 Hz
-	ros::Rate control_loop_rate(20);    // 20Hz update rate
+    waypoints.points.push_back(p1);
+    waypoints.points.push_back(p2);
+    waypoints.points.push_back(p3);
+}
 
-	while (ros::ok())	{
-		control_loop_rate.sleep(); // Maintain the loop rate
-		ros::spinOnce();   // Check for new messages
+// Visualize milestones on RViz
+void milestonesVisualization() {
+    milestones.header.frame_id = "/map";
+    milestones.header.stamp = ros::Time::now();
+    milestones.ns = "points_and_lines";
+    milestones.type = visualization_msgs::Marker::LINE_STRIP;
+    milestones.action = visualization_msgs::Marker::ADD;
+    milestones.lifetime = ros::Duration();
 
-		// Publish visualization markers for target waypoints
-		// marker_pub.publish(waypoints);
+    milestones.id = 0;
+    milestones.color.r = 1.0;
+    milestones.color.g = 0.0;
+    milestones.color.b = 0.0;
+    milestones.color.a = 1.0;
 
-		// Main loop code goes here:
-		control_loop_rate.sleep();
-		// velocity_control_update();
+    milestones.scale.x = 0.5;
+    milestones.scale.y = 0.5;
+    milestones.scale.z = 0.5;
 
-		// velocity_publisher.publish(vel); // Publish the command velocity
-	}
+    // Build list of points to show
+    for (int a = 0; a < x_wp_list.size(); a++) {
+        geometry_msgs::Point p;
+        p.x = x_wp_list[a];
+        p.y = y_wp_list[a];
+        p.z = 0;
+        milestones.points.push_back(p);
+    }
+}
 
-	return 0;
+int main(int argc, char * * argv) {
+    // Initialize map
+    grid_map = 50 * MatrixXi::Ones(map_height, map_width);
+
+    // Initialize control variables
+    // Second-order controller; history size of 3
+    for (int a = 0; a < 3; a++) {
+        r.push_back(0);
+        e.push_back(0);
+        u.push_back(0);
+        y.push_back(0);
+    }
+
+    // Initialize the ROS framework
+    ros::init(argc, argv, "main_control");
+    ros::NodeHandle n;
+
+    // Subscribe to the desired topics and assign callbacks
+    ros::Subscriber map_sub = n.subscribe("/map", 1, map_callback);
+
+    // Switch between /indoor_pos and /local_pose
+    ros::Subscriber pose_sub = n.subscribe("/local_pose", 1, pose_callback);
+
+    // Setup topics to Publish from this node
+    velocity_publisher = n.advertise < geometry_msgs::Twist > ("/cmd_vel_mux/input/navi", 1);
+    marker_pub = n.advertise < visualization_msgs::Marker > ("visualization_marker", 1, true);
+
+    // Set control loop refresh rate to 20 Hz
+    ros::Rate control_loop_rate(20); // 20Hz update rate
+
+    // ----------------------------------------------------
+    // CONTROLS TESTING ONLY; REMOVE WHEN IMPLEMENTING
+    // x_prev = 0;
+    // y_prev = 0;
+    // theta_prev = 0;
+    //
+    // // (3,3)
+    // x_target = 3;
+    // y_target = 3;
+    // theta_target = 0.5;
+    //
+    // // (5, 3)
+    // x_wp_list.push_back(5);
+    // y_wp_list.push_back(3);
+    // theta_wp_list.push_back(0.5);
+    //
+    // // (1, -3)
+    // x_wp_list.push_back(1);
+    // y_wp_list.push_back(-3);
+    // theta_wp_list.push_back(0.5);
+    // ----------------------------------------------------
+
+    while (ros::ok()) {
+        control_loop_rate.sleep(); // Maintain the loop rate
+        ros::spinOnce(); // Check for new messages
+
+        if (prm_generated) {
+            // Grab first iteration of prev and target points
+            if (wpNotGrabbed) {
+                x_prev = x_wp_list[0];
+                x_target = x_wp_list[1];
+                y_prev = y_wp_list[0];
+                y_target = y_wp_list[1];
+                theta_prev = theta_wp_list[0];
+                theta_target = theta_wp_list[1];
+
+                for (int b = 0; b < 2; b++) {
+                    x_wp_list.pop_front();
+                    y_wp_list.pop_front();
+                    theta_wp_list.pop_front();
+                }
+                wpNotGrabbed = 0;
+            }
+
+            // Visualize once given milestones and waypoints when ready
+            if (!markersVisualized) {
+                waypointsVisualization();
+                milestonesVisualization();
+                markersVisualized = 1;
+            }
+
+            // Publish visualization markers for target waypoints
+            marker_pub.publish(waypoints);
+            marker_pub.publish(milestones);
+
+            // Update velocity control when new IPS/localization msg received
+            if (newMsgReceived) {
+                velocity_control_update();
+            }
+
+            velocity_publisher.publish(vel); // Publish the command velocity
+
+            // Main loop code goes here:
+            control_loop_rate.sleep();
+        }
+
+    }
+
+    return 0;
 }
