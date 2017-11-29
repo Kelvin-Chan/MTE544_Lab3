@@ -715,6 +715,7 @@ void velocity_control_update() {
 
         if (DEBUG_MODE) {
             cout << "Milestone Reached" << endl;
+			cout << "Milestone List: " << x_wp_list.size() << " remaining" << endl;
         }
 
         // Check if target yaw is specified and not yet reached
@@ -814,7 +815,7 @@ void velocity_control_update() {
 
     // Bang-Bang controller for linear velocity
     if (abs(e[0]) < 0.01) {
-        vel.linear.x = 0.1;
+        vel.linear.x = 0.5;
     } else {
         vel.linear.x = 0;
     }
@@ -847,11 +848,11 @@ void waypointsVisualization() {
     waypoints.action = visualization_msgs::Marker::ADD;
     waypoints.lifetime = ros::Duration();
 
-    waypoints.id = 0;
-    waypoints.color.r = 1.0;
-    waypoints.color.g = 0.0;
+    waypoints.id = 1;
+    waypoints.color.r = 0.0;
+    waypoints.color.g = 1.0;
     waypoints.color.b = 0.0;
-    waypoints.color.a = 1.0;
+    waypoints.color.a = 0.5;
 
     waypoints.scale.x = 0.5;
     waypoints.scale.y = 0.5;
@@ -888,14 +889,14 @@ void milestonesVisualization() {
     milestones.lifetime = ros::Duration();
 
     milestones.id = 0;
-    milestones.color.r = 1.0;
+    milestones.color.r = 0.0;
     milestones.color.g = 0.0;
-    milestones.color.b = 0.0;
-    milestones.color.a = 1.0;
+    milestones.color.b = 1.0;
+    milestones.color.a = 0.5;
 
-    milestones.scale.x = 0.5;
-    milestones.scale.y = 0.5;
-    milestones.scale.z = 0.5;
+    milestones.scale.x = 0.2;
+    milestones.scale.y = 0.2;
+    milestones.scale.z = 0.2;
 
     // Build list of points to show
     for (int a = 0; a < x_wp_list.size(); a++) {
@@ -928,7 +929,7 @@ int main(int argc, char * * argv) {
     ros::Subscriber map_sub = n.subscribe("/map", 1, map_callback);
 
     // Switch between /indoor_pos and /local_pose
-    ros::Subscriber pose_sub = n.subscribe("/local_pose", 1, pose_callback);
+    ros::Subscriber pose_sub = n.subscribe("/indoor_pos", 1, pose_callback);
 
     // Setup topics to Publish from this node
     velocity_publisher = n.advertise < geometry_msgs::Twist > ("/cmd_vel_mux/input/navi", 1);
