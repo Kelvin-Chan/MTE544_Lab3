@@ -122,9 +122,11 @@ geometry_msgs::Twist vel;
 // Flags
 int endReached = 0;
 int newMsgReceived = 0;
+int markersVisualized = 0;
 
 bool initial_pose_received = false;
 bool initial_map_received = false;
+bool prm_generated = false;
 double initial_x, initial_y;
 
 // ------------------------------------------------------------------
@@ -617,15 +619,8 @@ void perform_prm() {
     if (DEBUG_MODE) {
         visualize_path();
     }
-}
 
-// Callback function for the localization
-void localization_callback(const geometry_msgs::PoseStamped & msg) {
-    X_l = msg.pose.position.x;
-    Y_l = msg.pose.position.y;
-    Yaw_l = tf::getYaw(msg.pose.orientation);
-
-    newMsgReceived = 1;
+    prm_generated = true;
 }
 
 // Generate velocity commands based on planned waypoints, current robot pose
@@ -857,63 +852,66 @@ int main(int argc, char * * argv) {
 
     // Subscribe to the desired topics and assign callbacks
     ros::Subscriber map_sub = n.subscribe("/map", 1, map_callback);
+
+    // Switch between /indoor_pos and /localization_output
     ros::Subscriber pose_sub = n.subscribe("/indoor_pos", 1, pose_callback);
-    ros::Subscriber localization_sub = n.subscribe("/localization_output", 1, localization_callback);
 
     // Setup topics to Publish from this node
     velocity_publisher = n.advertise < geometry_msgs::Twist > ("/cmd_vel_mux/input/navi", 1);
     marker_pub = n.advertise < visualization_msgs::Marker > ("visualization_marker", 1, true);
 
-    // Wait until information required for path generation is received
-    while (!(initial_map_received && initial_pose_received));
-    // perform_prm();
-
-    // Visualize given milestones and waypoints
-    // waypointsVisualization();
-    // milestonesVisualization();
-
     // Set control loop refresh rate to 20 Hz
     ros::Rate control_loop_rate(20); // 20Hz update rate
 
     // ----------------------------------------------------
-    // TESTING ONLY; REMOVE WHEN IMPLEMENTING
-    x_prev = 0;
-    y_prev = 0;
-    theta_prev = 0;
-
-    // (3,3)
-    x_target = 3;
-    y_target = 3;
-    theta_target = 0.5;
-
-    // (5, 3)
-    x_wp_list.push_back(5);
-    y_wp_list.push_back(3);
-    theta_wp_list.push_back(0.5);
-
-    // (1, -3)
-    x_wp_list.push_back(1);
-    y_wp_list.push_back(-3);
-    theta_wp_list.push_back(0.5);
+    // CONTROLS TESTING ONLY; REMOVE WHEN IMPLEMENTING
+    // x_prev = 0;
+    // y_prev = 0;
+    // theta_prev = 0;
+    //
+    // // (3,3)
+    // x_target = 3;
+    // y_target = 3;
+    // theta_target = 0.5;
+    //
+    // // (5, 3)
+    // x_wp_list.push_back(5);
+    // y_wp_list.push_back(3);
+    // theta_wp_list.push_back(0.5);
+    //
+    // // (1, -3)
+    // x_wp_list.push_back(1);
+    // y_wp_list.push_back(-3);
+    // theta_wp_list.push_back(0.5);
     // ----------------------------------------------------
 
     while (ros::ok()) {
         control_loop_rate.sleep(); // Maintain the loop rate
         ros::spinOnce(); // Check for new messages
 
-        // Publish visualization markers for target waypoints
-        // marker_pub.publish(waypoints);
-        // marker_pub.publish(milestones);
+        if (prm_generated) {
+            // Visualize once given milestones and waypoints when ready
+            if (!markersVisualized) {
+                waypointsVisualization();
+                milestonesVisualization();
+                markersVisualized = 1;
+            }
 
-        // Main loop code goes here:
-        control_loop_rate.sleep();
+            // Publish visualization markers for target waypoints
+            marker_pub.publish(waypoints);
+            marker_pub.publish(milestones);
 
-        // Update velocity control when new IPS/localization msg received
-        if (newMsgReceived) {
-            velocity_control_update();
+            // Update velocity control when new IPS/localization msg received
+            if (newMsgReceived) {
+                velocity_control_update();
+            }
+
+            velocity_publisher.publish(vel); // Publish the command velocity
+
+            // Main loop code goes here:
+            control_loop_rate.sleep();
         }
 
-        velocity_publisher.publish(vel); // Publish the command velocity
     }
 
     return 0;
