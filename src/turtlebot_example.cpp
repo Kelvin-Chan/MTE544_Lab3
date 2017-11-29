@@ -720,26 +720,15 @@ void velocity_control_update() {
         }
 
         // Check if target yaw is specified and not yet reached
+		// Rotate to target yaw, and when tolerance is reached, next waypoint
         if (theta_target != -1 && abs(theta_target - Yaw) > 0.01) {
             if (DEBUG_MODE) {
                 cout << "Adjusting yaw to waypoint target" << endl;
             }
 
-            r.push_front(theta_target - M_PI/2);
-            r.pop_back();
-
-            y.push_front(Yaw - M_PI/2);
-            y.pop_back();
-
-            e.push_front(cos(r[0] - y[0]));
-            e.pop_back();
-
-            // Proportional controller
-            u.push_front(K_P*e[0]);
-            u.pop_back();
-
+			// Rotating to target yaw
             vel.linear.x = 0;
-            vel.angular.z = u[0];
+            vel.angular.z = K_P*(theta_target - Yaw);
             return;
         } else {
             // Store previous waypoint
