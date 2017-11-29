@@ -68,7 +68,7 @@ static const int wp_sequence[] = {1,3,1,2,3};
 // ------------------------------------------------------------------
 
 // ROS Publisher and Messages
-ros::Publisher velocity_publisher, marker_pub;
+ros::Publisher velocity_publisher, marker_pub, occ_map_pub;
 visualization_msgs::Marker milestones;
 visualization_msgs::Marker waypoints;
 
@@ -600,6 +600,7 @@ void visualize_path()
 
 // Callback function for the map
 void map_callback(const nav_msgs::OccupancyGrid& msg) {
+    occ_map_pub.publish(msg);
     // Copy msg map data into grid map data
 	copy(msg.data.data(), msg.data.data() + map_size, grid_map.data());
     initial_map_received = true;
@@ -926,6 +927,7 @@ int main(int argc, char * * argv) {
     ros::NodeHandle n;
 
     // Subscribe to the desired topics and assign callbacks
+    occ_map_pub = n.advertise < nav_msgs::OccupancyGrid > ("occ_grid", 1, true);
     ros::Subscriber map_sub = n.subscribe("/map", 1, map_callback);
 
     // Switch between /indoor_pos and /local_pose
