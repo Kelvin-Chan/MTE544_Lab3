@@ -164,7 +164,7 @@ void pose_callback(const geometry_msgs::PoseWithCovarianceStamped & msg) {
     #ifdef SIMULATION
     #else
     X = X * 2.5;
-    Y = Y * 5.0;
+    Y = Y * -5.0;
     #endif
 
     newMsgReceived = 1;
