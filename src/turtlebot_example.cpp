@@ -853,8 +853,8 @@ int main(int argc, char * * argv) {
     // Subscribe to the desired topics and assign callbacks
     ros::Subscriber map_sub = n.subscribe("/map", 1, map_callback);
 
-    // Switch between /indoor_pos and /localization_output
-    ros::Subscriber pose_sub = n.subscribe("/indoor_pos", 1, pose_callback);
+    // Switch between /indoor_pos and /local_pose
+    ros::Subscriber pose_sub = n.subscribe("/local_pose", 1, pose_callback);
 
     // Setup topics to Publish from this node
     velocity_publisher = n.advertise < geometry_msgs::Twist > ("/cmd_vel_mux/input/navi", 1);
