@@ -35,7 +35,7 @@ using namespace Eigen;
 
 // ------------------------------------------------------------------
 #define DEBUG_MODE 1
-#define SIMULATION 1
+//#define SIMULATION 1
 
 // Map Configurations
 #ifdef SIMULATION
@@ -49,8 +49,8 @@ using namespace Eigen;
 #define map_height 70
 #define map_width 70
 #define map_size 4900
-#define map_offset_x -1
-#define map_offset_y -5
+#define map_offset_x 0
+#define map_offset_y 0
 
 #endif
 
@@ -93,9 +93,9 @@ float wp1 [] = {3.5, 0.0, 0.0};
 float wp2 [] = {7.5, 0.0, 3.14};
 float wp3 [] = {7.5, -3.5, -1.57};
 #else
-float wp1 [] = {4.0, 0.0, 0.0};
-float wp2 [] = {8.0, -4.0, 3.14};
-float wp3 [] = {8.0, 0.0, -1.57};
+float wp1 [] = {1.0, 3.0, 0.0};
+float wp2 [] = {3.0, 3.5, (M_PI/2.0)};
+float wp3 [] = {4.5, 0.5, (275.0/180.0*M_PI)};
 #endif
 float *wp_list[] = {wp1, wp2, wp3};
 
@@ -142,10 +142,10 @@ double initial_x, initial_y;
 #define D2C_DISTANCE_X(x, y) double((y*10.0/100.0) - 1.0)
 #define D2C_DISTANCE_Y(x, y) double((x*10.0/100.0) - 5.0)
 #else
-#define C2D_DISTANCE_X(x, y) 0 //int(x * 100.0/10.0)
-#define C2D_DISTANCE_Y(x, y) 0 //int(y * 100.0/10.0)
-#define D2C_DISTANCE_X(x, y) 0 //double(x * 10.0/100.0)
-#define D2C_DISTANCE_Y(x, y) 0 //double(y * 10.0/100.0)
+#define C2D_DISTANCE_X(x, y) int(y * 70.0/5.0)
+#define C2D_DISTANCE_Y(x, y) int(x * 70.0/5.0)
+#define D2C_DISTANCE_X(x, y) double(y * 5.0/70.0)
+#define D2C_DISTANCE_Y(x, y) double(x * 5.0/70.0)
 #endif
 // ------------------------------------------------------------------
 void perform_prm(); // prototype
@@ -160,6 +160,13 @@ void pose_callback(const geometry_msgs::PoseWithCovarianceStamped & msg) {
 	X = msg.pose.pose.position.x; // Robot X psotition
 	Y = msg.pose.pose.position.y; // Robot Y psotition
  	Yaw = tf::getYaw(msg.pose.pose.orientation); // Robot Yaw
+
+    #ifdef SIMULATION
+    #else
+    X = X * 2.5;
+    Y = Y * 5.0;
+    #endif
+
     newMsgReceived = 1;
 
     if (!initial_pose_received)
