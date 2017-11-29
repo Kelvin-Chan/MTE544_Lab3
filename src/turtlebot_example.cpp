@@ -79,9 +79,8 @@ MatrixXd tmp_grid_map = MatrixXd::Zero(map_width, map_height);
 
 // Milestones (Col0: X, Col1: Y)
 Matrix<int, num_milestones, 2, RowMajor> Milestones;
-Matrix<bool, num_milestones, num_milestones, RowMajor> MilestoneEdges;
-// Matrix<double, num_milestones, num_milestones, RowMajor> EdgeDistances;
 SparseMatrix<double> EdgeDistances(num_milestones, num_milestones);
+SparseMatrix<bool> MilestoneEdges(num_milestones, num_milestones);
 
 
 // Waypoints [x[m], y[m], θ[rad]]
@@ -325,7 +324,7 @@ void generate_edges()
     {
         for (j = 0; j < num_milestones; j++)
         {
-            MilestoneEdges(i,j) = true;
+            MilestoneEdges.insert(i,j) = true;
         }
     }
 
@@ -341,8 +340,8 @@ void generate_edges()
             // if milestones overlap ignore edge
             if ((Milestones(i, 0) == Milestones(j, 0)) and (Milestones(i, 1) == Milestones(j, 1)))
             {
-                MilestoneEdges(i,j) = false;
-                MilestoneEdges(j,i) = false;
+                MilestoneEdges.coeffRef(i,j) = false;
+                MilestoneEdges.coeffRef(j,i) = false;
                 continue;
             }
 
@@ -366,13 +365,13 @@ void generate_edges()
 
                 if (grid_map(temp_x, temp_y) != 0)
                 {
-                    MilestoneEdges(i,j) = false;
-                    MilestoneEdges(j,i) = false;
+                    MilestoneEdges.coeffRef(i,j) = false;
+                    MilestoneEdges.coeffRef(j,i) = false;
                     break;
                 }
             }
 
-            if (MilestoneEdges(i,j))
+            if (MilestoneEdges.coeff(i,j))
             {
                 EdgeDistances.insert(i,j) = edge_length(i,j);
                 EdgeDistances.insert(j,i) = EdgeDistances.coeff(i,j);
@@ -389,7 +388,7 @@ void visualize_edges()
     {
         for (j = 0; j < num_milestones; j++)
         {
-            std::cout << int(MilestoneEdges(i,j)) << " ";
+            std::cout << int(MilestoneEdges.coeff(i,j)) << " ";
         }
         std::cout << "; ";
     }
@@ -492,7 +491,7 @@ void a_star_algorithm(int start, int finish)
         for (i = 0; i < num_milestones; i++)
         {
             // check for edge
-            if (MilestoneEdges(best_milestone, i))
+            if (MilestoneEdges.coeff(best_milestone, i))
             {
                 // if milestone in closed set, continue
                 if (find_vec_ind(closed_node, i) != -1)
@@ -961,7 +960,7 @@ int main(int argc, char * * argv) {
     // ----------------------------------------------------
 
     while (ros::ok()) {
-        control_loop_rate.sleep(); // Maintain the loop rate
+        // control_loop_rate.sleep(); // Maintain the loop rate
         ros::spinOnce(); // Check for new messages
 
         if (prm_generated) {
@@ -1001,8 +1000,8 @@ int main(int argc, char * * argv) {
             velocity_publisher.publish(vel); // Publish the command velocity
 
             // Main loop code goes here:
-            control_loop_rate.sleep();
         }
+        control_loop_rate.sleep();
 
     }
 
