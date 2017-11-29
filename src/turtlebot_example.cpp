@@ -49,8 +49,8 @@ using namespace Eigen;
 #define map_height 70
 #define map_width 70
 #define map_size 4900
-#define map_offset_x 0
-#define map_offset_y 0
+#define map_offset_x -1
+#define map_offset_y 2.25
 
 #endif
 
@@ -98,7 +98,7 @@ float wp3 [] = {7.5, -3.5, -1.57};
 // float wp3 [] = {4.85, 0.55, (275.0/180.0*M_PI)};
 float wp1 [] = {2.7143    ,0.1643 , 0.0};
 float wp2 [] = {2.9000    ,-1.2500, (M_PI/2.0)};
-float wp3 [] = {-0.4429   ,-2.4071, (275.0/180.0*M_PI)};
+float wp3 [] = {-0.4429   ,-2.4071, ((275.0/180.0*M_PI) - (2*M_PI))};
 #endif
 float *wp_list[] = {wp1, wp2, wp3};
 
@@ -619,7 +619,14 @@ void map_callback(const nav_msgs::OccupancyGrid& msg) {
 
 	newMsg.info.origin.position.x = map_offset_x;
 	newMsg.info.origin.position.y = map_offset_y;
-
+	#ifdef SIMULATION
+	#else
+	newMsg.info.origin.orientation.w = tf::createQuaternionFromYaw(-M_PI/2).w();
+	newMsg.info.origin.orientation.x = tf::createQuaternionFromYaw(-M_PI/2).x();
+	newMsg.info.origin.orientation.y = tf::createQuaternionFromYaw(-M_PI/2).y();
+	newMsg.info.origin.orientation.z = tf::createQuaternionFromYaw(-M_PI/2).z();
+	newMsg.info.resolution = (float) 6/70;
+	#endif
 	occ_map_pub.publish(newMsg);
 
 	// Copy msg map data into grid map data
@@ -742,14 +749,16 @@ void velocity_control_update() {
 
         // Check if target yaw is specified and not yet reached
 		// Rotate to target yaw, and when tolerance is reached, next waypoint
-        if (theta_target != -1 && abs(theta_target - Yaw) > 0.01) {
+        if (theta_target != -1 && abs(theta_target - Yaw) > 0.1) {
             if (DEBUG_MODE) {
                 cout << "Adjusting yaw to waypoint target" << endl;
+				cout << "Target Yaw: " << theta_target << endl;
+				cout << "Current Yaw: " << Yaw << endl;
             }
 
 			// Rotating to target yaw
             vel.linear.x = 0;
-            vel.angular.z = 0.3;
+            vel.angular.z = 0.1;
             return;
         } else {
             // Store previous waypoint
@@ -825,7 +834,7 @@ void velocity_control_update() {
     // vel.linear.x = 0.1;
 
     // Bang-Bang controller for linear velocity
-    if (abs(e[0]) < 0.01) {
+    if (abs(e[0]) < 0.1) {
         vel.linear.x = 0.5;
     } else {
         vel.linear.x = 0;
