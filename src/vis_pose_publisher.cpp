@@ -3,7 +3,7 @@
 // turtlebot_example.cpp
 // This file contains example code for use with ME 597 lab 3
 //
-// Author: James Servos 
+// Author: James Servos
 //
 // //////////////////////////////////////////////////////////
 
@@ -40,11 +40,11 @@ int main(int argc, char **argv)
     //Subscribe to the desired topics and assign callbacks
     ros::Subscriber pose_sub = n.subscribe("/indoor_pos", 1, pose_callback);
     pose_publisher = n.advertise<geometry_msgs::PoseWithCovarianceStamped>("/vis_pos", 1, true);
-  
+
 
     //Set the loop rate
     ros::Rate loop_rate(40);    //40Hz update rate
-	
+
 
     while (ros::ok())
     {
