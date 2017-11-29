@@ -123,6 +123,7 @@ geometry_msgs::Twist vel;
 int endReached = 0;
 int newMsgReceived = 0;
 int markersVisualized = 0;
+int wpNotGrabbed = 1;
 
 bool initial_pose_received = false;
 bool initial_map_received = false;
@@ -891,17 +892,20 @@ int main(int argc, char * * argv) {
 
         if (prm_generated) {
             // Grab first iteration of prev and target points
-            x_prev = x_wp_list[0];
-            x_target = x_wp_list[1];
-            y_prev = y_wp_list[0];
-            y_target = y_wp_list[1];
-            theta_prev = theta_wp_list[0];
-            theta_target = theta_wp_list[1];
+            if (wpNotGrabbed) {
+                x_prev = x_wp_list[0];
+                x_target = x_wp_list[1];
+                y_prev = y_wp_list[0];
+                y_target = y_wp_list[1];
+                theta_prev = theta_wp_list[0];
+                theta_target = theta_wp_list[1];
 
-            for (int b = 0; b < 2; b++) {
-                x_wp_list.pop_front();
-                y_wp_list.pop_front();
-                theta_wp_list.pop_front();
+                for (int b = 0; b < 2; b++) {
+                    x_wp_list.pop_front();
+                    y_wp_list.pop_front();
+                    theta_wp_list.pop_front();
+                }
+                wpNotGrabbed = 0;
             }
 
             // Visualize once given milestones and waypoints when ready
