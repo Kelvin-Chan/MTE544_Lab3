@@ -93,9 +93,9 @@ float wp1 [] = {3.5, 0.0, 0.0};
 float wp2 [] = {7.5, 0.0, 3.14};
 float wp3 [] = {7.5, -3.5, -1.57};
 #else
-float wp1 [] = {1.0, 3.0, 0.0};
-float wp2 [] = {3.0, 3.5, (M_PI/2.0)};
-float wp3 [] = {4.5, 0.5, (275.0/180.0*M_PI)};
+float wp1 [] = {0.3, -1.7, 0.0};
+float wp2 [] = {2.9, -2.15, (M_PI/2.0)};
+float wp3 [] = {4.85, 0.55, (275.0/180.0*M_PI)};
 #endif
 float *wp_list[] = {wp1, wp2, wp3};
 
@@ -142,10 +142,10 @@ double initial_x, initial_y;
 #define D2C_DISTANCE_X(x, y) double((y*10.0/100.0) - 1.0)
 #define D2C_DISTANCE_Y(x, y) double((x*10.0/100.0) - 5.0)
 #else
-#define C2D_DISTANCE_X(x, y) int(y * 70.0/5.0)
-#define C2D_DISTANCE_Y(x, y) int(x * 70.0/5.0)
-#define D2C_DISTANCE_X(x, y) double(y * 5.0/70.0)
-#define D2C_DISTANCE_Y(x, y) double(x * 5.0/70.0)
+#define C2D_DISTANCE_X(x, y) int((x + 1.0) * 70.0/6.5)
+#define C2D_DISTANCE_Y(x, y) int((y - 1.0) * 70.0/-4.5)
+#define D2C_DISTANCE_X(x, y) double((x*6.5/70.0) - 1.0)
+#define D2C_DISTANCE_Y(x, y) double((y*-4.5/70.0) + 1.0)
 #endif
 // ------------------------------------------------------------------
 void perform_prm(); // prototype
@@ -161,11 +161,11 @@ void pose_callback(const geometry_msgs::PoseWithCovarianceStamped & msg) {
 	Y = msg.pose.pose.position.y; // Robot Y psotition
  	Yaw = tf::getYaw(msg.pose.pose.orientation); // Robot Yaw
 
-    #ifdef SIMULATION
-    #else
-    X = X * 2.5;
-    Y = Y * -5.0;
-    #endif
+    // #ifdef SIMULATION
+    // #else
+    // X = X * 2.5;
+    // Y = Y * -5.0;
+    // #endif
 
     newMsgReceived = 1;
 
