@@ -42,11 +42,15 @@ using namespace Eigen;
 #define map_height 100
 #define map_width 100
 #define map_size 10000
+#define map_offset_x -1
+#define map_offset_y -5
 
 #else
 #define map_height 70
 #define map_width 70
 #define map_size 4900
+#define map_offset_x -1
+#define map_offset_y -5
 
 #endif
 
@@ -600,8 +604,15 @@ void visualize_path()
 
 // Callback function for the map
 void map_callback(const nav_msgs::OccupancyGrid& msg) {
-    occ_map_pub.publish(msg);
-    // Copy msg map data into grid map data
+	// Edit map offset position for republishing
+	nav_msgs::OccupancyGrid newMsg = msg;
+
+	newMsg.info.origin.position.x = map_offset_x;
+	newMsg.info.origin.position.y = map_offset_y;
+
+	occ_map_pub.publish(newMsg);
+
+	// Copy msg map data into grid map data
 	copy(msg.data.data(), msg.data.data() + map_size, grid_map.data());
     initial_map_received = true;
 
@@ -728,7 +739,7 @@ void velocity_control_update() {
 
 			// Rotating to target yaw
             vel.linear.x = 0;
-            vel.angular.z = K_P*(theta_target - Yaw);
+            vel.angular.z = 0.3;
             return;
         } else {
             // Store previous waypoint
@@ -956,7 +967,14 @@ int main(int argc, char * * argv) {
         ros::spinOnce(); // Check for new messages
 
         if (prm_generated) {
-            // Grab first iteration of prev and target points
+            // Visualize once given milestones and waypoints when ready
+            if (!markersVisualized) {
+                waypointsVisualization();
+                milestonesVisualization();
+                markersVisualized = 1;
+            }
+
+			// Grab first iteration of prev and target points
             if (wpNotGrabbed) {
                 x_prev = x_wp_list[0];
                 x_target = x_wp_list[1];
@@ -971,13 +989,6 @@ int main(int argc, char * * argv) {
                     theta_wp_list.pop_front();
                 }
                 wpNotGrabbed = 0;
-            }
-
-            // Visualize once given milestones and waypoints when ready
-            if (!markersVisualized) {
-                waypointsVisualization();
-                milestonesVisualization();
-                markersVisualized = 1;
             }
 
             // Publish visualization markers for target waypoints
