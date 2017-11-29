@@ -890,6 +890,20 @@ int main(int argc, char * * argv) {
         ros::spinOnce(); // Check for new messages
 
         if (prm_generated) {
+            // Grab first iteration of prev and target points
+            x_prev = x_wp_list[0];
+            x_target = x_wp_list[1];
+            y_prev = y_wp_list[0];
+            y_target = y_wp_list[1];
+            theta_prev = theta_wp_list[0];
+            theta_target = theta_wp_list[1];
+
+            for (int b = 0; b < 2; b++) {
+                x_wp_list.pop_front();
+                y_wp_list.pop_front();
+                theta_wp_list.pop_front();
+            }
+
             // Visualize once given milestones and waypoints when ready
             if (!markersVisualized) {
                 waypointsVisualization();
